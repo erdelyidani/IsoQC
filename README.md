@@ -22,3 +22,6 @@ zoo v1.8-12
 leaflet 2.2.0
 bslib v0.5.1
 markdown v1.13
+
+Live version:
+https://erdelyidani.shinyapps.io/IsoQC/
