@@ -12,7 +12,7 @@ library(zoo)
 library(leaflet)
 library(bslib)
 library(markdown)
-#FILEUPLOAD
+
 # --- Helper: wrap long legend names every 16 chars with newline ---
 wrap_name <- function(x) {
   gsub("(.{17})", "\\1\n", x)
@@ -139,7 +139,7 @@ ui <- fluidPage(
   tags$footer(
     style = "width:100%;text-align:center;padding:10px;background:white;
              font-size:12px;color:grey;border-top:1px solid #ddd;margin-top:30px;",
-    "© 2025 2ka Paleoklíma Lendület. All rights reserved. IsoQC v1.0.96"
+    "© 2025 2ka Paleoklíma Lendület. All rights reserved. IsoQC v2.0.3"
   )
 )
 
@@ -278,7 +278,7 @@ server <- function(input, output, session) {
       value      = dr,
       timeFormat = "%d-%m-%Y"
     )
-
+    
     updateDateInput(session, "date_min", value = dr[1])
     updateDateInput(session, "date_max", value = dr[2])
     updateTabsetPanel(session, "main_tabs", selected = "Dashboard")
@@ -350,7 +350,7 @@ server <- function(input, output, session) {
     
     # (optional) pan/zoom the map to the clicked station
     leafletProxy("map") %>% 
-      setView(lng = click$lng, lat = click$lat, zoom = 8)
+      setView(lng = click$lng, lat = click$lat, zoom = 6)
   })
   
   # Reactive data transforms
@@ -389,6 +389,32 @@ server <- function(input, output, session) {
     )
   })
   
+  nearby_means <- reactive({
+    req(input$station)
+    near <- nearby_station_data() %>%
+      filter(Date >= input$date_range[1] & Date <= input$date_range[2])
+    
+    near %>% group_by(Date) %>% summarize(
+      d18Oc = mean(d18Oc, na.rm = TRUE),
+      d2Hc  = mean(d2Hc,  na.rm = TRUE),
+      D_excess = mean(D_excess, na.rm = TRUE),
+      .groups = "drop"
+    )
+  })
+  
+  
+  selected_station_coords <- reactive({
+    req(input$station)
+    helpers_data <- helpers()
+    selected <- helpers_data$stations %>% filter(Station == input$station)
+    if (nrow(selected) > 0) {
+      list(lat = selected$lat, lon = selected$lon)
+    } else {
+      NULL
+    }
+  })
+  
+  
   # Map with initial distances
   output$map <- renderLeaflet({
     req(data_GNIP_raw(), input$station)
@@ -401,7 +427,9 @@ server <- function(input, output, session) {
         radius = 5,
         fillColor   = "#D3D3D3",  # other stations
         fillOpacity = 0.7,
-        stroke      = FALSE,
+        stroke      = TRUE,       # enable stroke
+        color       = "black",    # black outline
+        weight      = 1,          # outline thickness
         label       = ~Station,
         labelOptions = labelOptions(direction = "auto", textsize = "12px")
       ) %>%
@@ -434,26 +462,57 @@ server <- function(input, output, session) {
       )
     }
     
-    proxy %>%
-      addCircleMarkers(
-        data = other_sts, lng = ~lon, lat = ~lat,
-        layerId = ~Station, radius = 5,
-        fillColor   = "#D3D3D3", fillOpacity = 0.7, stroke = FALSE,
-        label = ~Station, labelOptions = labelOptions(direction = "auto")
-      ) %>%
-      addCircleMarkers(
-        data = near_sts, lng = ~lon, lat = ~lat,
-        layerId = ~Station, radius = 6,
-        fillColor   = "#666666", fillOpacity = 0.8, stroke = FALSE,
-        label = ~Station, labelOptions = labelOptions(direction = "auto")
-      ) %>%
-      addCircleMarkers(
-        data = sel, lng = ~lon, lat = ~lat,
-        layerId = ~Station, radius = 7,
-        fillColor   = "#0A92FF", fillOpacity = 1, stroke = FALSE,
-        label = ~Station, labelOptions = labelOptions(direction = "auto")
-      )
+    leafletProxy("map") %>% clearMarkers() -> proxy
+    
+    if (!is.null(other_sts) && nrow(other_sts) > 0) {
+      proxy <- proxy %>%
+        addCircleMarkers(
+          data = other_sts, lng = ~lon, lat = ~lat,
+          layerId = ~Station, radius = 5,
+          fillColor   = "#D3D3D3", fillOpacity = 0.7, 
+          stroke      = TRUE,       # enable stroke
+          color       = "black",    # black outline
+          weight      = 0.5,          # outline thickness
+          label = ~Station, labelOptions = labelOptions(direction = "auto")
+        )
+    }
+    
+    if (!is.null(near_sts) && nrow(near_sts) > 0) {
+      proxy <- proxy %>%
+        addCircleMarkers(
+          data = near_sts, lng = ~lon, lat = ~lat,
+          layerId = ~Station, radius = 6,
+          fillColor   = "#666666", fillOpacity = 0.8,
+          stroke      = TRUE,       # enable stroke
+          color       = "black",    # black outline
+          weight      = 0.5,          # outline thickness
+          label = ~Station, labelOptions = labelOptions(direction = "auto")
+        )
+    }
+    
+    if (!is.null(sel) && nrow(sel) > 0) {
+      proxy <- proxy %>%
+        addCircleMarkers(
+          data = sel, lng = ~lon, lat = ~lat,
+          layerId = ~Station, radius = 7,
+          fillColor   = "#0A92FF", fillOpacity = 1,
+          stroke      = TRUE,       # enable stroke
+          color       = "black",    # black outline
+          weight      = 1,          # outline thickness
+          label = ~Station, labelOptions = labelOptions(direction = "auto")
+        )
+    }
+    
   })
+  
+  observe({
+    coords <- selected_station_coords()
+    if (!is.null(coords)) {
+      leafletProxy("map") %>%
+        setView(lng = coords$lon, lat = coords$lat, zoom = 6)
+    }
+  })
+  
   
   # Time‐series plots
   generate_plot <- function(y_var, mean_var, diff_var, color, thr_input) {
