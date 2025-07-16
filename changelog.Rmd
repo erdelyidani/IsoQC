@@ -1,0 +1,34 @@
+---
+title: "Changelog"
+output: html_document
+---
+
+## v2.0.5
+**2025-07-16**
+
+**Fixed:** Preview table now shows dates in dd/mm/YYYY format instead of Excel serial numbers.
+**Enhanced:** Station Data Availability plot uses the full dataset and offers dynamic hover tooltips (daily: DD/MM/YYYY, monthly: MM/YYYY, yearly: YYYY).
+
+
+## v2.0.4
+**2025-06-20**
+
+**Added:** Interactive map tab with leaflet-based station visualization and customizable radius filtering.
+
+
+## v2.0.3
+**2025-05-10**
+
+**Enhanced:** Data import wizard now fully supports both Excel and CSV inputs with custom delimiters and date‐format parsing.
+
+
+## v2.0.2
+**2025-04-01**
+
+**Improved:** Time-series plots gained threshold‐bar overlays and automated mean‐comparison lines for robust quality checks.
+
+
+## v2.0.1
+**2025-02-15**
+
+**Initial 2.0 release:** Redesigned UI with bslib theming and introduced core isotope validation dashboards and summary metrics.  
