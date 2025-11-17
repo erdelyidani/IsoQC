@@ -1,5 +1,5 @@
 # app.R
-#IsoQC v2.0.5
+#IsoQC v2.0.8
 library(shiny)
 library(plotly)
 library(readxl)
@@ -47,7 +47,6 @@ data_GNIP_raw <- reactiveVal(NULL)
 
 # --- Build reactive helpers object ---
 rebuild_helpers <- function(df) {
-  minAlt <- min(df$Altitude, na.rm = TRUE)
   sts <- df %>%
     distinct(Station, Latitude, Longitude) %>%
     st_as_sf(coords = c("Longitude", "Latitude"), crs = 4326)
@@ -56,7 +55,6 @@ rebuild_helpers <- function(df) {
   sts$lat <- coords[,2]
   dm <- as.matrix(distm(coords, fun = distGeo)) / 1000
   list(
-    Altitude_min    = minAlt,
     stations        = sts,
     distance_matrix = dm
   )
@@ -120,7 +118,7 @@ ui <- fluidPage(
                   sliderInput("Xd", "Nearby Search Radius (km):", min = 0, max = 500, value = 90, step = 10),
                   numericInput("d18O_threshold", HTML("&delta;<sup>18</sup>O Threshold (‰):"), value = 6.5),
                   numericInput("d2H_threshold",   HTML("&delta;<sup>2</sup>H Threshold (‰):"), value = 52),
-                  numericInput("D_excess_threshold", "D‑excess Threshold (‰):", value = 19),
+                  numericInput("D_excess_threshold", "D-excess Threshold (‰):", value = 19),
                   tags$p("Default thresholds from ",
                          a("Erdélyi et al. (2024)", href="https://doi.org/10.17738/ajes.2024.0014", target="_blank", style="color:#0A92FF;"),
                          ".", style="font-size:12px;font-style:italic;color:grey;"),
@@ -133,13 +131,21 @@ ui <- fluidPage(
                                 min = Sys.Date()-365, max = Sys.Date(),
                                 value = c(Sys.Date()-365, Sys.Date()), timeFormat = "%d-%m-%Y",
                                 step = 30)
-                  )
+                  ),
                   
-                  
-                  ,
                   dateInput("date_min", "From:", value = Sys.Date(), format = "dd-mm-yyyy", startview = "year"),
                   dateInput("date_max", "To:", value = Sys.Date(), format = "dd-mm-yyyy", startview = "year"),
-                  leafletOutput("map")
+                  
+                  # STD type selector
+                  selectInput(
+                    "std_type", "Nearby Stations STD type:",
+                    choices = c("STD" = "STD", "STD²" = "STD2", "STD³" = "STD3"),
+                    selected = "STD"
+                  ),
+                  
+                  leafletOutput("map"),
+                  br(),
+                  downloadButton("download_plot_data", "Download plot data (.csv)")
                 ),
                 mainPanel(
                   plotlyOutput("plot_O18"), div(style = "height:40px;"),
@@ -159,26 +165,69 @@ ui <- fluidPage(
              font-size:12px;color:grey;border-top:1px solid #ddd;margin-top:30px;",
     HTML(paste0(
       "© 2025 2ka Paleoklíma Lendület. All rights reserved. ",
-      actionLink("show_changelog", "IsoQC v2.0.5")
+      actionLink("show_changelog", "IsoQC v2.0.8")
     ))
-  )
+  ),
+  
+  tags$head(tags$script(HTML("
+  $(document).on('hidden.bs.modal', '.modal', function () {
+    Shiny.setInputValue('any_modal_closed', Math.random());
+  });
+")))
+  
+  
 )
 
 # --- Server logic ---
 server <- function(input, output, session) {
   
-  # when user clicks the version link, show the changelog
+  observeEvent(input$any_modal_closed, { suppress_data_warnings(FALSE) })
+  
+  
+  # Skip the very first availability warning after (re)loading data
+  skip_first_warning <- reactiveVal(FALSE)
+  
+  
+  # --- Context & guards ---
+  station_changed <- reactiveVal(FALSE)     # user has changed station at least once
+  last_action <- reactiveVal(NULL)          # "selection" or "changelog"
+  suppress_data_warnings <- reactiveVal(FALSE)  # TRUE while changelog modal is up
+  last_warn_key <- reactiveVal(NULL)        # to avoid repeating the same popup
+  
+  # User selection: station (ignore initial programmatic selection)
+  observeEvent(input$station, {
+    station_changed(TRUE)
+    last_action("selection")
+  }, ignoreInit = TRUE)
+  
+  
+  
+  ####
+  # User selection: date changes (both sources)
+  observeEvent(input$date_range, { last_action("selection") }, ignoreInit = TRUE)
+  observeEvent(list(input$date_min, input$date_max), {
+    last_action("selection")
+  }, ignoreInit = TRUE)
+  
+  
   observeEvent(input$show_changelog, {
+    last_action("changelog")
+    suppress_data_warnings(TRUE)
+    
     showModal(modalDialog(
-      title       = "IsoQC Changelog",
-      size        = "l",        # large—enough to scroll
-      easyClose   = TRUE,
-      footer      = modalButton("Close"),
+      title = "IsoQC Changelog",
+      size = "l",
+      easyClose = FALSE,           # keep control so we can clear suppression deterministically
+      footer = tagList(actionButton("close_changelog", "Close")),
       includeMarkdown("changelog.Rmd")
     ))
   })
   
-  
+  observeEvent(input$close_changelog, {
+    suppress_data_warnings(FALSE)
+    removeModal()
+  })
+  #### 
   
   # Column‐mapping UI
   # 1) Drive the CSV-vs-Excel inputs + Upload button
@@ -386,6 +435,7 @@ server <- function(input, output, session) {
   
   # 2) Import data into the main reactive
   observeEvent(input$import_data, {
+    
     req(input$file, input$map_station)
     ext <- tolower(tools::file_ext(input$file$name))
     raw <- switch(ext,
@@ -421,7 +471,7 @@ server <- function(input, output, session) {
       select(Station, Date, Longitude, Latitude, Altitude, d18O, d2H, D_excess)
     
     data_GNIP_raw(df)
-    
+    skip_first_warning(TRUE)
     # then your existing code to update inputs…
     dr <- range(df$Date)
     updateSelectizeInput(session, "station",
@@ -457,7 +507,7 @@ server <- function(input, output, session) {
     
     # 2) Push it into your reactiveVal
     data_GNIP_raw(df_test)
-    
+    skip_first_warning(TRUE)
     #compute safe date‐range
     dates <- df_test$Date
     good  <- dates[!is.na(dates)]
@@ -521,12 +571,23 @@ server <- function(input, output, session) {
       setView(lng = click$lng, lat = click$lat, zoom = 6)
   })
   
+  # --- Selected station altitude for elevation correction ---
+  selected_station_altitude <- reactive({
+    req(input$station, data_GNIP_raw())
+    df <- data_GNIP_raw()
+    alt_vec <- df$Altitude[df$Station == input$station]
+    alt_vec <- alt_vec[!is.na(alt_vec)]
+    if (length(alt_vec) == 0) 0 else alt_vec[1]
+  })
+  
   # Reactive data transforms
   correctedData <- reactive({
     df <- data_GNIP_raw()
+    refAlt <- selected_station_altitude()  # use altitude of selected station
     df %>% mutate(
-      d18Oc = d18O + input$g_isoO * ((Altitude - helpers()$Altitude_min)/1000),
-      d2Hc  = d2H  + input$g_isoH * ((Altitude - helpers()$Altitude_min)/1000)
+      # based on line 321 (https://github.com/istvan60/SPbI/blob/main/v4)
+      d18Oc = d18O + ((Altitude - refAlt)*input$g_isoO/1000),
+      d2Hc  = d2H  + ((Altitude - refAlt)*input$g_isoH/1000)
     )
   })
   selected_station_data <- reactive({
@@ -546,9 +607,13 @@ server <- function(input, output, session) {
     sel <- selected_station_data() %>% filter(Date >= dr[1] & Date <= dr[2])
     near <- nearby_station_data()  %>% filter(Date >= dr[1] & Date <= dr[2])
     means <- near %>% group_by(Date) %>% summarize(
-      d18Oc_Mean    = mean(d18Oc,   na.rm = TRUE),
-      d2Hc_Mean     = mean(d2Hc,    na.rm = TRUE),
-      D_excess_Mean = mean(D_excess,na.rm = TRUE), .groups="drop"
+      d18Oc_Mean    = mean(d18Oc,    na.rm = TRUE),
+      d18Oc_SD      = sd(d18Oc,      na.rm = TRUE),
+      d2Hc_Mean     = mean(d2Hc,     na.rm = TRUE),
+      d2Hc_SD       = sd(d2Hc,       na.rm = TRUE),
+      D_excess_Mean = mean(D_excess, na.rm = TRUE),
+      D_excess_SD   = sd(D_excess,   na.rm = TRUE),
+      .groups       = "drop"
     )
     left_join(sel, means, by = "Date") %>% mutate(
       d18Oc_Diff    = abs(d18Oc    - d18Oc_Mean),
@@ -563,8 +628,8 @@ server <- function(input, output, session) {
       filter(Date >= input$date_range[1] & Date <= input$date_range[2])
     
     near %>% group_by(Date) %>% summarize(
-      d18Oc = mean(d18Oc, na.rm = TRUE),
-      d2Hc  = mean(d2Hc,  na.rm = TRUE),
+      d18Oc   = mean(d18Oc,    na.rm = TRUE),
+      d2Hc    = mean(d2Hc,     na.rm = TRUE),
       D_excess = mean(D_excess, na.rm = TRUE),
       .groups = "drop"
     )
@@ -580,6 +645,67 @@ server <- function(input, output, session) {
     } else {
       NULL
     }
+  })
+  
+  
+  # Build a key that changes on (station, date_range)
+  availability_key <- reactive({
+    req(input$station, input$date_range)
+    paste(input$station, as.character(as.Date(input$date_range)), collapse = "|")
+  })
+  
+  observeEvent(availability_key(), {
+    # Only warn for user-triggered selection changes,
+    # not during app init, not while changelog is open.
+    
+    if (isTRUE(skip_first_warning())) {
+      skip_first_warning(FALSE)
+      return(invisible(NULL))
+    }
+    
+    if (!isTRUE(station_changed())) return()
+    if (!identical(last_action(), "selection")) return()
+    if (isTRUE(suppress_data_warnings())) return()
+    
+    dr <- as.Date(input$date_range)
+    sd_sub <- selected_station_data() %>%
+      dplyr::filter(Date >= dr[1], Date <= dr[2])
+    
+    # Determine availability strictly on the selected station's raw values
+    has_O18 <- nrow(sd_sub) > 0 && any(!is.na(sd_sub$d18O))
+    has_H2  <- nrow(sd_sub) > 0 && any(!is.na(sd_sub$d2H))
+    
+    missing <- c()
+    if (!has_O18) missing <- c(missing, "δ<sup>18</sup>O")
+    if (!has_H2)  missing <- c(missing, "δ<sup>2</sup>H")
+    
+    if (length(missing) == 0) {
+      # reset last shown key so future missing states can notify again
+      last_warn_key(NULL)
+      return(invisible(NULL))
+    }
+    
+    # De-dup: only show if this (station, range, which-missing) changed
+    key <- paste(input$station, format(dr[1]), format(dr[2]), paste(missing, collapse = "&"))
+    if (identical(last_warn_key(), key)) return(invisible(NULL))
+    last_warn_key(key)
+    
+    msg <- if (length(missing) == 1) {
+      sprintf("<b>%s</b> does not have %s measurements between %s and %s.",
+              input$station, missing,
+              format(dr[1], "%d-%m-%Y"), format(dr[2], "%d-%m-%Y"))
+    } else {
+      sprintf("<b>%s</b> does not have %s measurements between %s and %s.",
+              input$station, paste(missing, collapse = " and "),
+              format(dr[1], "%d-%m-%Y"), format(dr[2], "%d-%m-%Y"))
+    }
+    
+    showModal(modalDialog(
+      title = "Data not available",
+      easyClose = TRUE,
+      footer = modalButton("Close"),
+      HTML(msg)
+    ))
   })
   
   
@@ -681,12 +807,193 @@ server <- function(input, output, session) {
     }
   })
   
+  # ---------- EXPORT DATA FOR PLOTS ----------
+  plot_export_data <- reactive({
+    req(data_GNIP_raw(), input$station)
+    fd <- filtered_data()
+    if (is.null(fd) || nrow(fd) == 0) return(NULL)
+    
+    std_type <- input$std_type
+    dr <- as.Date(input$date_range)
+    
+    fd2 <- fd %>%
+      mutate(
+        d18Oc_STD_active = case_when(
+          std_type == "STD2" ~ d18Oc_SD^2,
+          std_type == "STD3" ~ d18Oc_SD^3,
+          TRUE               ~ d18Oc_SD
+        ),
+        d2Hc_STD_active = case_when(
+          std_type == "STD2" ~ d2Hc_SD^2,
+          std_type == "STD3" ~ d2Hc_SD^3,
+          TRUE               ~ d2Hc_SD
+        ),
+        D_excess_STD_active = case_when(
+          std_type == "STD2" ~ D_excess_SD^2,
+          std_type == "STD3" ~ D_excess_SD^3,
+          TRUE               ~ D_excess_SD
+        )
+      )
+    
+    # Nearby station data in current range
+    near <- nearby_station_data() %>%
+      filter(Date >= dr[1] & Date <= dr[2])
+    
+    # δ18O: selected station, mean, diff, STD, neighbours
+    d18_sel <- fd2 %>%
+      transmute(
+        Date,
+        Variable = "d18O",
+        Legend   = input$station,
+        Value    = d18Oc
+      )
+    d18_mean <- fd2 %>%
+      transmute(
+        Date,
+        Variable = "d18O",
+        Legend   = "Nearby mean",
+        Value    = d18Oc_Mean
+      )
+    d18_diff <- fd2 %>%
+      transmute(
+        Date,
+        Variable = "d18O",
+        Legend   = "Difference |site - mean|",
+        Value    = d18Oc_Diff
+      )
+    d18_std <- fd2 %>%
+      transmute(
+        Date,
+        Variable = "d18O",
+        Legend   = paste0("STD (", std_type, ")"),
+        Value    = d18Oc_STD_active
+      )
+    d18_nei <- near %>%
+      transmute(
+        Date,
+        Variable = "d18O",
+        Legend   = Station,
+        Value    = d18Oc
+      )
+    d18_long <- bind_rows(d18_sel, d18_mean, d18_diff, d18_std, d18_nei)
+    
+    # δ2H: selected station, mean, diff, STD, neighbours
+    d2H_sel <- fd2 %>%
+      transmute(
+        Date,
+        Variable = "d2H",
+        Legend   = input$station,
+        Value    = d2Hc
+      )
+    d2H_mean <- fd2 %>%
+      transmute(
+        Date,
+        Variable = "d2H",
+        Legend   = "Nearby mean",
+        Value    = d2Hc_Mean
+      )
+    d2H_diff <- fd2 %>%
+      transmute(
+        Date,
+        Variable = "d2H",
+        Legend   = "Difference |site - mean|",
+        Value    = d2Hc_Diff
+      )
+    d2H_std <- fd2 %>%
+      transmute(
+        Date,
+        Variable = "d2H",
+        Legend   = paste0("STD (", std_type, ")"),
+        Value    = d2Hc_STD_active
+      )
+    d2H_nei <- near %>%
+      transmute(
+        Date,
+        Variable = "d2H",
+        Legend   = Station,
+        Value    = d2Hc
+      )
+    d2H_long <- bind_rows(d2H_sel, d2H_mean, d2H_diff, d2H_std, d2H_nei)
+    
+    # D-excess: selected station, mean, diff, STD, neighbours (uncorrected)
+    dex_sel <- fd2 %>%
+      transmute(
+        Date,
+        Variable = "D_excess",
+        Legend   = input$station,
+        Value    = D_excess
+      )
+    dex_mean <- fd2 %>%
+      transmute(
+        Date,
+        Variable = "D_excess",
+        Legend   = "Nearby mean",
+        Value    = D_excess_Mean
+      )
+    dex_diff <- fd2 %>%
+      transmute(
+        Date,
+        Variable = "D_excess",
+        Legend   = "Difference |site - mean|",
+        Value    = D_excess_Diff
+      )
+    dex_std <- fd2 %>%
+      transmute(
+        Date,
+        Variable = "D_excess",
+        Legend   = paste0("STD (", std_type, ")"),
+        Value    = D_excess_STD_active
+      )
+    dex_nei <- near %>%
+      transmute(
+        Date,
+        Variable = "D_excess",
+        Legend   = Station,
+        Value    = D_excess
+      )
+    dex_long <- bind_rows(dex_sel, dex_mean, dex_diff, dex_std, dex_nei)
+    
+    all_data <- bind_rows(d18_long, d2H_long, dex_long) %>%
+      arrange(Date, Variable, Legend)
+    
+    all_data %>%
+      mutate(
+        Search_Radius_km   = input$Xd,
+        Threshold_d18O     = input$d18O_threshold,
+        Threshold_d2H      = input$d2H_threshold,
+        Threshold_D_excess = input$D_excess_threshold,
+        ElevCorr_d18O      = input$g_isoO,
+        ElevCorr_d2H       = input$g_isoH,
+        From               = as.Date(input$date_range[1]),
+        To                 = as.Date(input$date_range[2])
+      )
+  })
+  
+  output$download_plot_data <- downloadHandler(
+    filename = function() {
+      paste0("IsoQC_timeseries_", input$station, "_", Sys.Date(), ".csv")
+    },
+    content = function(file) {
+      df_out <- plot_export_data()
+      if (is.null(df_out)) {
+        write.csv(data.frame(), file, row.names = FALSE)
+      } else {
+        write.csv(df_out, file, row.names = FALSE)
+      }
+    }
+  )
   
   # Time‐series plots
-  generate_plot <- function(y_var, mean_var, diff_var, color, thr_input) {
+  # y_var: value at selected station (corrected)
+  # mean_var: nearby mean (by date)
+  # sd_var: nearby SD (by date; base SD)
+  # diff_var: |station - nearby mean|
+  generate_plot <- function(y_var, mean_var, sd_var, diff_var, color, thr_input) {
     fd <- filtered_data()
     nd <- nearby_station_data() %>% filter(Date >= input$date_range[1] & Date <= input$date_range[2])
     p <- plot_ly()
+    
+    # Nearby stations time-series (grey)
     for (stn in sort(unique(nd$Station))) {
       sub <- nd %>% filter(Station == stn)
       sl  <- split_data_by_month(sub, "Date", y_var)
@@ -700,6 +1007,8 @@ server <- function(input, output, session) {
         )
       }
     }
+    
+    # Selected station (colored line)
     sel_l <- split_data_by_month(fd, "Date", y_var)
     p <- p %>% add_trace(
       data=sel_l, x=~Date, y=sel_l[[y_var]],
@@ -708,6 +1017,8 @@ server <- function(input, output, session) {
       marker=list(size=5,color=color),
       name=input$station
     )
+    
+    # Nearby mean (black dashed)
     mean_l <- split_data_by_month(fd, "Date", mean_var)
     p <- p %>% add_trace(
       data=mean_l, x=~Date, y=mean_l[[mean_var]],
@@ -716,22 +1027,99 @@ server <- function(input, output, session) {
       marker=list(size=4,color="black"),
       name="Nearby Mean"
     )
-    p <- p %>% add_bars(
-      data=fd, x=~Date, y=as.formula(paste0("~",diff_var)),
-      marker=list(color="#808080"),
-      name=paste(input$station,"Difference"),
-      opacity=0.5, width=1000*60*60*24*20
-    )
+    
+    # ----- Bar logic using selected STD type -----
     thr <- as.numeric(input[[thr_input]])
-    ov <- fd %>% filter(.data[[diff_var]]>thr)
-    if(nrow(ov)>0) {
+    std_type <- input$std_type
+    
+    # Prepare diff & base SD columns for bar operations
+    fd_bars <- fd %>%
+      mutate(
+        diff_value = .data[[diff_var]],
+        sd_base    = .data[[sd_var]]
+      )
+    
+    # Compute selected STD variant
+    if (std_type == "STD2") {
+      fd_bars$sd_value <- fd_bars$sd_base^2
+    } else if (std_type == "STD3") {
+      fd_bars$sd_value <- fd_bars$sd_base^3
+    } else {
+      fd_bars$sd_value <- fd_bars$sd_base
+    }
+    
+    # Above threshold (purple with red outline)
+    ov <- fd_bars %>% filter(!is.na(diff_value) & diff_value > thr)
+    # Below/equal threshold
+    non_ov <- fd_bars %>% filter(is.na(diff_value) | diff_value <= thr)
+    
+    # Among non_ov: where selected STD > diff -> red bars
+    high_sd <- non_ov %>%
+      filter(!is.na(diff_value) & !is.na(sd_value) & sd_value > diff_value)
+    # Remaining (STD <= diff or missing STD) -> grey
+    normal <- non_ov %>%
+      filter(is.na(diff_value) | is.na(sd_value) | sd_value <= diff_value)
+    
+    std_label <- switch(std_type,
+                        "STD"  = "STD",
+                        "STD2" = "STD²",
+                        "STD3" = "STD³",
+                        "STD")
+    
+    hover_tmpl <- paste0(
+      "%{x|%d-%m-%Y}<br>",
+      "Difference: %{y:.2f}‰<br>",
+      std_label, ": %{customdata:.2f}‰<extra></extra>"
+    )
+    
+    # Grey bars: diff <= thr & STD <= diff (or no STD)
+    if (nrow(normal) > 0) {
       p <- p %>% add_bars(
-        data=ov, x=~Date, y=as.formula(paste0("~",diff_var)),
-        marker=list(color="purple"),
-        name=wrap_name(paste(input$station,"Above threshold")),
-        opacity=0.7, width=1000*60*60*24*20
+        data = normal,
+        x = ~Date,
+        y = ~diff_value,
+        marker = list(color = "#808080"),
+        name = paste(input$station,"Difference"),
+        opacity = 0.5,
+        width = 1000*60*60*24*20,
+        customdata = ~sd_value,
+        hovertemplate = hover_tmpl
       )
     }
+    
+    # Red bars: diff <= thr & selected STD > diff
+    if (nrow(high_sd) > 0) {
+      p <- p %>% add_bars(
+        data = high_sd,
+        x = ~Date,
+        y = ~diff_value,
+        marker = list(color = "red"),
+        name = paste(input$station,"Difference (", std_label, " > Diff)"),
+        opacity = 0.7,
+        width = 1000*60*60*24*20,
+        customdata = ~sd_value,
+        hovertemplate = hover_tmpl
+      )
+    }
+    
+    # Purple bars with red outline: diff > threshold
+    if (nrow(ov) > 0) {
+      p <- p %>% add_bars(
+        data = ov,
+        x = ~Date,
+        y = ~diff_value,
+        marker = list(
+          color = "purple",
+          line  = list(color = "red", width = 1.5)
+        ),
+        name = wrap_name(paste(input$station,"Above threshold")),
+        opacity = 0.7,
+        width = 1000*60*60*24*20,
+        customdata = ~sd_value,
+        hovertemplate = hover_tmpl
+      )
+    }
+    
     p %>% layout(
       barmode="overlay",
       legend=list(font=list(size=9), x=1.02,y=1),
@@ -739,31 +1127,63 @@ server <- function(input, output, session) {
       yaxis=list(title=switch(y_var,
                               "d18Oc"="δ¹⁸O (‰)",
                               "d2Hc" ="δ²H (‰)",
-                              "D_excess"="D‑excess (‰)"
+                              "D_excess"="D-excess (‰)"
       ))
     )
   }
   
   output$plot_O18 <- renderPlotly({
     req(data_GNIP_raw(), input$station)
-    generate_plot("d18Oc", "d18Oc_Mean", "d18Oc_Diff", "#0A92FF", "d18O_threshold")
+    
+    dr <- as.Date(input$date_range)
+    sd_sub <- selected_station_data() %>% dplyr::filter(Date >= dr[1], Date <= dr[2])
+    has_O18 <- nrow(sd_sub) > 0 && any(!is.na(sd_sub$d18O))
+    if (!has_O18) return(NULL)
+    
+    generate_plot("d18Oc", "d18Oc_Mean", "d18Oc_SD", "d18Oc_Diff", "#0A92FF", "d18O_threshold")
   })
   
-  output$plot_H2  <- renderPlotly({
+  
+  
+  output$plot_H2 <- renderPlotly({
     req(data_GNIP_raw(), input$station)
-    generate_plot("d2Hc",  "d2Hc_Mean",  "d2Hc_Diff",  "red",   "d2H_threshold")
+    
+    dr <- as.Date(input$date_range)
+    sd_sub <- selected_station_data() %>% dplyr::filter(Date >= dr[1], Date <= dr[2])
+    has_H2 <- nrow(sd_sub) > 0 && any(!is.na(sd_sub$d2H))
+    if (!has_H2) return(NULL)
+    
+    generate_plot("d2Hc", "d2Hc_Mean", "d2Hc_SD", "d2Hc_Diff", "red", "d2H_threshold")
   })
+  
+  
   
   output$plot_D_excess <- renderPlotly({
     req(data_GNIP_raw(), input$station)
-    generate_plot("D_excess", "D_excess_Mean", "D_excess_Diff", "green", "D_excess_threshold")
+    
+    dr <- as.Date(input$date_range)
+    sd_sub <- selected_station_data() %>% dplyr::filter(Date >= dr[1], Date <= dr[2])
+    has_pair <- nrow(sd_sub) > 0 && any(!is.na(sd_sub$d18O) & !is.na(sd_sub$d2H))
+    if (!has_pair) return(NULL)
+    
+    generate_plot("D_excess", "D_excess_Mean", "D_excess_SD", "D_excess_Diff", "green", "D_excess_threshold")
   })
+  
+  
+  
   
   output$plot_XY <- renderPlotly({
     req(data_GNIP_raw(), input$station)
-    df    <- filtered_data()
-    valid <- df %>% filter(d18Oc_Diff <= input$d18O_threshold & d2Hc_Diff <= input$d2H_threshold)
-    prob  <- df %>% filter(d18Oc_Diff >  input$d18O_threshold | d2Hc_Diff > input$d2H_threshold)
+    
+    df <- filtered_data()
+    
+    # --- require at least one point with BOTH corrected values ---
+    has_pair <- nrow(df) > 0 && any(!is.na(df$d18Oc) & !is.na(df$d2Hc))
+    if (!has_pair) return(NULL)
+    
+    valid <- df %>% dplyr::filter(d18Oc_Diff <= input$d18O_threshold & d2Hc_Diff <= input$d2H_threshold)
+    prob  <- df %>% dplyr::filter(d18Oc_Diff >  input$d18O_threshold & d2Hc_Diff >  input$d2H_threshold)
+    
     plot_ly() %>%
       add_trace(data=df,    x=~d18Oc, y=~d2Hc, type="scatter", mode="markers",
                 marker=list(color="#D3D3D3",size=8), name="All points") %>%
@@ -773,10 +1193,12 @@ server <- function(input, output, session) {
                 marker=list(color="purple",size=10),
                 name=wrap_name(paste(input$station,"Above threshold"))) %>%
       layout(
-        xaxis=list(title="δ¹⁸O (‰)"), yaxis=list(title="δ²H (‰)"),
-        legend=list(font=list(size=9), x=1.02,y=1)
+        xaxis=list(title="δ¹⁸O (‰)"),
+        yaxis=list(title="δ²H (‰)"),
+        legend=list(font=list(size=9), x=1.02, y=1)
       )
   })
+  
 }
 
 shinyApp(ui, server)
