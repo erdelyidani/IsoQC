@@ -3,6 +3,38 @@ title: "Changelog"
 output: html_document
 ---
 
+## v2.0.8
+**2025-11-17**
+
+**Added: Export time-series data feature.**  
+- New *“Download plot data (.csv)”* button under the map exports the currently displayed time-series data for δ¹⁸O, δ²H and D-excess.  
+- The CSV includes, for each date and variable, the selected station, all nearby stations, the nearby mean, the |site − mean| differences, and the active STD metric (STD / STD² / STD³).  
+- Each row is accompanied by the analysis context: nearby search radius (km), isotope-specific thresholds, elevation correction slopes for δ¹⁸O and δ²H, and the active date range (*From* / *To*), ensuring that exported diagnostics are fully traceable to the dashboard settings.
+
+
+## v2.0.7
+**2025-11-14**
+
+**Enhanced:** Elevation correction is now station-centric.
+- Altitude reference for the elevation correction was changed from the dataset-wide minimum altitude to the altitude of the currently selected station, making corrected δ¹⁸O and δ²H values directly comparable to the local setting.
+
+**Added: Nearby-stations STD controls and STD-based bar colouring.**  
+- Difference bars in the δ¹⁸O, δ²H and D-excess time-series are now coloured using both the threshold and the STD metric:  
+  - Grey: difference ≤ threshold and STD metric ≤ difference.  
+  - Red: difference ≤ threshold but STD metric > difference (potentially suspicious, but still under threshold).  
+  - Purple with red outline: difference above the configured threshold.  
+- Hover tooltips on difference bars now report both the difference and the STD metric.
+
+
+## v2.0.6
+**2025-09-09**
+
+**Enhanced:** Improved missing-data handling and user experience in the Dashboard:  
+- Time-series plots (δ¹⁸O, δ²H) now remain blank instead of failing when data are unavailable for the selected station and date range.  
+- D‑excess and XY plots also remain blank when no paired isotope data exist.  
+- Introduced a unified warning popup system that displays a single message when one or both isotopes are missing, skips the popup during initial data load, and prevents conflicts with the changelog popup message.
+
+
 ## v2.0.5
 **2025-07-16**
 
