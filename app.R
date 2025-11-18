@@ -44,7 +44,6 @@ split_data_by_month <- function(df, x_var, y_var) {
 
 #empty df
 data_GNIP_raw <- reactiveVal(NULL)
-
 # --- Build reactive helpers object ---
 rebuild_helpers <- function(df) {
   sts <- df %>%
@@ -136,12 +135,6 @@ ui <- fluidPage(
                   dateInput("date_min", "From:", value = Sys.Date(), format = "dd-mm-yyyy", startview = "year"),
                   dateInput("date_max", "To:", value = Sys.Date(), format = "dd-mm-yyyy", startview = "year"),
                   
-                  # STD type selector
-                  selectInput(
-                    "std_type", "Nearby Stations STD type:",
-                    choices = c("STD" = "STD", "STD²" = "STD2", "STD³" = "STD3"),
-                    selected = "STD"
-                  ),
                   
                   leafletOutput("map"),
                   br(),
@@ -183,7 +176,6 @@ server <- function(input, output, session) {
   
   observeEvent(input$any_modal_closed, { suppress_data_warnings(FALSE) })
   
-  
   # Skip the very first availability warning after (re)loading data
   skip_first_warning <- reactiveVal(FALSE)
   
@@ -213,11 +205,10 @@ server <- function(input, output, session) {
   observeEvent(input$show_changelog, {
     last_action("changelog")
     suppress_data_warnings(TRUE)
-    
     showModal(modalDialog(
       title = "IsoQC Changelog",
-      size = "l",
-      easyClose = FALSE,           # keep control so we can clear suppression deterministically
+      size  = "l",
+      easyClose = TRUE,   # <-- most félrekattintásra és ESC-re is zár
       footer = tagList(actionButton("close_changelog", "Close")),
       includeMarkdown("changelog.Rmd")
     ))
@@ -816,28 +807,21 @@ server <- function(input, output, session) {
     std_type <- input$std_type
     dr <- as.Date(input$date_range)
     
+    std_type <- "STD2"
+    
+    
     fd2 <- fd %>%
       mutate(
-        d18Oc_STD_active = case_when(
-          std_type == "STD2" ~ d18Oc_SD^2,
-          std_type == "STD3" ~ d18Oc_SD^3,
-          TRUE               ~ d18Oc_SD
-        ),
-        d2Hc_STD_active = case_when(
-          std_type == "STD2" ~ d2Hc_SD^2,
-          std_type == "STD3" ~ d2Hc_SD^3,
-          TRUE               ~ d2Hc_SD
-        ),
-        D_excess_STD_active = case_when(
-          std_type == "STD2" ~ D_excess_SD^2,
-          std_type == "STD3" ~ D_excess_SD^3,
-          TRUE               ~ D_excess_SD
-        )
+        d18Oc_STD_active  = 2 * d18Oc_SD,
+        d2Hc_STD_active   = 2 * d2Hc_SD,
+        D_excess_STD_active = 2 * D_excess_SD
       )
     
+    
+    
     # Nearby station data in current range
-    near <- nearby_station_data() %>%
-      filter(Date >= dr[1] & Date <= dr[2])
+    #near <- nearby_station_data() %>%
+    #  filter(Date >= dr[1] & Date <= dr[2])
     
     # δ18O: selected station, mean, diff, STD, neighbours
     d18_sel <- fd2 %>%
@@ -865,17 +849,18 @@ server <- function(input, output, session) {
       transmute(
         Date,
         Variable = "d18O",
-        Legend   = paste0("STD (", std_type, ")"),
+        Legend = "2×St.Dev.",
         Value    = d18Oc_STD_active
       )
-    d18_nei <- near %>%
-      transmute(
-        Date,
-        Variable = "d18O",
-        Legend   = Station,
-        Value    = d18Oc
-      )
-    d18_long <- bind_rows(d18_sel, d18_mean, d18_diff, d18_std, d18_nei)
+    #d18_nei <- near %>%
+    #  transmute(
+    #    Date,
+    #    Variable = "d18O",
+    #    Legend   = Station,
+    #    Value    = d18Oc
+    #  )
+    #d18_long <- bind_rows(d18_sel, d18_mean, d18_diff, d18_std, d18_nei)
+    d18_long <- bind_rows(d18_sel, d18_mean, d18_diff, d18_std)
     
     # δ2H: selected station, mean, diff, STD, neighbours
     d2H_sel <- fd2 %>%
@@ -903,17 +888,18 @@ server <- function(input, output, session) {
       transmute(
         Date,
         Variable = "d2H",
-        Legend   = paste0("STD (", std_type, ")"),
+        Legend = "2×St.Dev.",
         Value    = d2Hc_STD_active
       )
-    d2H_nei <- near %>%
-      transmute(
-        Date,
-        Variable = "d2H",
-        Legend   = Station,
-        Value    = d2Hc
-      )
-    d2H_long <- bind_rows(d2H_sel, d2H_mean, d2H_diff, d2H_std, d2H_nei)
+    #d2H_nei <- near %>%
+    #  transmute(
+    #    Date,
+    #    Variable = "d2H",
+    #    Legend   = Station,
+    #    Value    = d2Hc
+    #  )
+    #d2H_long <- bind_rows(d2H_sel, d2H_mean, d2H_diff, d2H_std, d2H_nei)
+    d2H_long <- bind_rows(d2H_sel, d2H_mean, d2H_diff, d2H_std)
     
     # D-excess: selected station, mean, diff, STD, neighbours (uncorrected)
     dex_sel <- fd2 %>%
@@ -941,17 +927,18 @@ server <- function(input, output, session) {
       transmute(
         Date,
         Variable = "D_excess",
-        Legend   = paste0("STD (", std_type, ")"),
+        Legend = "2×St.Dev.",
         Value    = D_excess_STD_active
       )
-    dex_nei <- near %>%
-      transmute(
-        Date,
-        Variable = "D_excess",
-        Legend   = Station,
-        Value    = D_excess
-      )
-    dex_long <- bind_rows(dex_sel, dex_mean, dex_diff, dex_std, dex_nei)
+    #dex_nei <- near %>%
+    #  transmute(
+    #    Date,
+    #    Variable = "D_excess",
+    #    Legend   = Station,
+    #    Value    = D_excess
+    #  )
+    #dex_long <- bind_rows(dex_sel, dex_mean, dex_diff, dex_std, dex_nei)
+    dex_long <- bind_rows(dex_sel, dex_mean, dex_diff, dex_std)
     
     all_data <- bind_rows(d18_long, d2H_long, dex_long) %>%
       arrange(Date, Variable, Legend)
@@ -969,19 +956,41 @@ server <- function(input, output, session) {
       )
   })
   
+  
   output$download_plot_data <- downloadHandler(
     filename = function() {
       paste0("IsoQC_timeseries_", input$station, "_", Sys.Date(), ".csv")
     },
     content = function(file) {
       df_out <- plot_export_data()
-      if (is.null(df_out)) {
-        write.csv(data.frame(), file, row.names = FALSE)
-      } else {
-        write.csv(df_out, file, row.names = FALSE)
-      }
+      if (is.null(df_out)) df_out <- data.frame()
+      
+      # 1) minden karakteroszlopot biztosan UTF-8-ra állítunk
+      df_out[] <- lapply(df_out, function(col) {
+        if (is.character(col)) enc2utf8(col) else col
+      })
+      
+      # 2) megnyitjuk a célfájlt, beírjuk a UTF-8 BOM-ot, majd CSV-be írjuk
+      con <- file(file, open = "wb")          # bináris, hogy a BOM biztosan pontos legyen
+      on.exit(close(con), add = TRUE)
+      
+      # UTF-8 BOM
+      writeBin(charToRaw("\ufeff"), con)
+      
+      # A write.table-nek/ write.csv-nek *nem* adjuk át újra a file nevét, hanem a con-t
+      # Figyelem: write.csv 'fileEncoding' nélkül is működik, mivel a con már UTF-8-as.
+      utils::write.table(
+        df_out,
+        file = con,
+        sep = ",",
+        row.names = FALSE,
+        col.names = TRUE,
+        qmethod = "double",
+        na = ""
+      )
     }
   )
+  
   
   # Time‐series plots
   # y_var: value at selected station (corrected)
@@ -990,7 +999,8 @@ server <- function(input, output, session) {
   # diff_var: |station - nearby mean|
   generate_plot <- function(y_var, mean_var, sd_var, diff_var, color, thr_input) {
     fd <- filtered_data()
-    nd <- nearby_station_data() %>% filter(Date >= input$date_range[1] & Date <= input$date_range[2])
+    nd <- nearby_station_data() %>%
+      filter(Date >= input$date_range[1] & Date <= input$date_range[2])
     p <- plot_ly()
     
     # Nearby stations time-series (grey)
@@ -999,11 +1009,11 @@ server <- function(input, output, session) {
       sl  <- split_data_by_month(sub, "Date", y_var)
       if (!all(is.na(sl[[y_var]]))) {
         p <- p %>% add_trace(
-          data=sl, x=~Date, y=as.formula(paste0("~",y_var)),
-          type="scatter", mode="lines+markers",
-          line=list(color="grey",width=0.5),
-          marker=list(size=2,opacity=0.7),
-          name=stn
+          data = sl, x = ~Date, y = as.formula(paste0("~", y_var)),
+          type = "scatter", mode = "lines+markers",
+          line = list(color = "grey", width = 0.5),
+          marker = list(size = 2, opacity = 0.7),
+          name = stn
         )
       }
     }
@@ -1011,126 +1021,156 @@ server <- function(input, output, session) {
     # Selected station (colored line)
     sel_l <- split_data_by_month(fd, "Date", y_var)
     p <- p %>% add_trace(
-      data=sel_l, x=~Date, y=sel_l[[y_var]],
-      type="scatter", mode="lines+markers",
-      line=list(color=color,width=2),
-      marker=list(size=5,color=color),
-      name=input$station
+      data = sel_l, x = ~Date, y = sel_l[[y_var]],
+      type = "scatter", mode = "lines+markers",
+      line = list(color = color, width = 2),
+      marker = list(size = 5, color = color),
+      name = input$station
     )
     
     # Nearby mean (black dashed)
     mean_l <- split_data_by_month(fd, "Date", mean_var)
     p <- p %>% add_trace(
-      data=mean_l, x=~Date, y=mean_l[[mean_var]],
-      type="scatter", mode="lines+markers",
-      line=list(color="black",width=2,dash="dot"),
-      marker=list(size=4,color="black"),
-      name="Nearby Mean"
+      data = mean_l, x = ~Date, y = mean_l[[mean_var]],
+      type = "scatter", mode = "lines+markers",
+      line = list(color = "black", width = 2, dash = "dot"),
+      marker = list(size = 4, color = "black"),
+      name = "Nearby Mean"
     )
     
     # ----- Bar logic using selected STD type -----
     thr <- as.numeric(input[[thr_input]])
     std_type <- input$std_type
     
-    # Prepare diff & base SD columns for bar operations
+    
     fd_bars <- fd %>%
       mutate(
         diff_value = .data[[diff_var]],
-        sd_base    = .data[[sd_var]]
+        sd_base    = .data[[sd_var]],
+        sd_value   = 2 * sd_base
       )
+
     
-    # Compute selected STD variant
-    if (std_type == "STD2") {
-      fd_bars$sd_value <- fd_bars$sd_base^2
-    } else if (std_type == "STD3") {
-      fd_bars$sd_value <- fd_bars$sd_base^3
-    } else {
-      fd_bars$sd_value <- fd_bars$sd_base
-    }
+    std_label <- "2×St.Dev."
     
-    # Above threshold (purple with red outline)
-    ov <- fd_bars %>% filter(!is.na(diff_value) & diff_value > thr)
-    # Below/equal threshold
-    non_ov <- fd_bars %>% filter(is.na(diff_value) | diff_value <= thr)
+
     
-    # Among non_ov: where selected STD > diff -> red bars
-    high_sd <- non_ov %>%
-      filter(!is.na(diff_value) & !is.na(sd_value) & sd_value > diff_value)
-    # Remaining (STD <= diff or missing STD) -> grey
-    normal <- non_ov %>%
-      filter(is.na(diff_value) | is.na(sd_value) | sd_value <= diff_value)
-    
-    std_label <- switch(std_type,
-                        "STD"  = "STD",
-                        "STD2" = "STD²",
-                        "STD3" = "STD³",
-                        "STD")
     
     hover_tmpl <- paste0(
       "%{x|%d-%m-%Y}<br>",
       "Difference: %{y:.2f}‰<br>",
       std_label, ": %{customdata:.2f}‰<extra></extra>"
+      
     )
     
-    # Grey bars: diff <= thr & STD <= diff (or no STD)
-    if (nrow(normal) > 0) {
-      p <- p %>% add_bars(
-        data = normal,
-        x = ~Date,
-        y = ~diff_value,
-        marker = list(color = "#808080"),
-        name = paste(input$station,"Difference"),
-        opacity = 0.5,
-        width = 1000*60*60*24*20,
-        customdata = ~sd_value,
-        hovertemplate = hover_tmpl
-      )
+
+    
+    # Threshold alatti és feletti pontok szétválasztása
+    below_thr <- fd_bars %>%
+      filter(!is.na(diff_value) & diff_value <= thr)
+    above_thr <- fd_bars %>%
+      filter(!is.na(diff_value) & diff_value > thr)
+    
+    ## ---- THRESHOLD ALATT ----
+    # Sötétszürke: diff > STD (de még threshold alatt)
+    if (nrow(below_thr) > 0) {
+      dark_df <- below_thr %>%
+        filter(!is.na(sd_value) & diff_value > sd_value)
+      
+      # Világosszürke: STD >= diff vagy STD hiányzik
+      light_df <- below_thr %>%
+        filter(is.na(sd_value) | sd_value >= diff_value)
+      
+      if (nrow(light_df) > 0) {
+        p <- p %>% add_bars(
+          data  = light_df,
+          x     = ~Date,
+          y     = ~diff_value,
+          marker = list(color = "#C0C0C0"),   # világosszürke
+          name  = paste(input$station, "diff."),
+          opacity = 0.6,
+          width   = 1000 * 60 * 60 * 24 * 20,
+          customdata   = ~sd_value,
+          hovertemplate = hover_tmpl
+        )
+      }
+      
+      if (nrow(dark_df) > 0) {
+        p <- p %>% add_bars(
+          data  = dark_df,
+          x     = ~Date,
+          y     = ~diff_value,
+          marker = list(color = "#606060"),   # sötétszürke
+          name  = paste(input$station, "diff. > 2×St.Dev."),
+          opacity = 0.7,
+          width   = 1000 * 60 * 60 * 24 * 20,
+          customdata   = ~sd_value,
+          hovertemplate = hover_tmpl
+        )
+      }
     }
     
-    # Red bars: diff <= thr & selected STD > diff
-    if (nrow(high_sd) > 0) {
-      p <- p %>% add_bars(
-        data = high_sd,
-        x = ~Date,
-        y = ~diff_value,
-        marker = list(color = "red"),
-        name = paste(input$station,"Difference (", std_label, " > Diff)"),
-        opacity = 0.7,
-        width = 1000*60*60*24*20,
-        customdata = ~sd_value,
-        hovertemplate = hover_tmpl
-      )
-    }
-    
-    # Purple bars with red outline: diff > threshold
-    if (nrow(ov) > 0) {
-      p <- p %>% add_bars(
-        data = ov,
-        x = ~Date,
-        y = ~diff_value,
-        marker = list(
-          color = "purple",
-          line  = list(color = "red", width = 1.5)
-        ),
-        name = wrap_name(paste(input$station,"Above threshold")),
-        opacity = 0.7,
-        width = 1000*60*60*24*20,
-        customdata = ~sd_value,
-        hovertemplate = hover_tmpl
-      )
+    ## ---- THRESHOLD FELETT ----
+    if (nrow(above_thr) > 0) {
+      # Fekete körvonal CSAK akkor, ha:
+      # diff > threshold (ez már teljesül itt) ÉS diff > STD ÉS STD > 0
+      ov_outline <- above_thr %>%
+        filter(!is.na(sd_value) & sd_value > 0 & diff_value > sd_value)
+      
+      # Minden más threshold feletti pont: lila, körvonal nélkül
+      ov_no_outline <- above_thr %>%
+        filter(is.na(sd_value) | sd_value <= 0 | diff_value <= sd_value)
+      
+      # Lila fekete körvonallal
+      if (nrow(ov_outline) > 0) {
+        p <- p %>% add_bars(
+          data = ov_outline,
+          x    = ~Date,
+          y    = ~diff_value,
+          marker = list(
+            color = "purple",
+            line  = list(color = "black", width = 1.5)
+          ),
+          name = wrap_name(paste(input$station, "diff. > threshold & 2×St.Dev.")),
+          opacity = 0.8,
+          width   = 1000 * 60 * 60 * 24 * 20,
+          customdata   = ~sd_value,
+          hovertemplate = hover_tmpl
+        )
+      }
+      
+      # Lila, KÖRVONAL NÉLKÜL (diff > threshold, de diff ≤ STD vagy STD ≤ 0 / NA)
+      if (nrow(ov_no_outline) > 0) {
+        p <- p %>% add_bars(
+          data = ov_no_outline,
+          x    = ~Date,
+          y    = ~diff_value,
+          marker = list(color = "purple"),
+          name = wrap_name(paste(input$station, "diff. > threshold")),
+          #showlegend = nrow(ov_outline) == 0,  # ha már van lila+outline elem, ne duplázzuk
+          showlegend  = TRUE,
+          opacity = 0.7,
+          width   = 1000 * 60 * 60 * 24 * 20,
+          customdata   = ~sd_value,
+          hovertemplate = hover_tmpl
+        )
+      }
     }
     
     p %>% layout(
-      barmode="overlay",
-      legend=list(font=list(size=9), x=1.02,y=1),
-      xaxis=list(tickformat="%d-%m-%Y"),
-      yaxis=list(title=switch(y_var,
-                              "d18Oc"="δ¹⁸O (‰)",
-                              "d2Hc" ="δ²H (‰)",
-                              "D_excess"="D-excess (‰)"
+      barmode = "overlay",
+      legend  = list(font = list(size = 9), x = 1.02, y = 1),
+      xaxis   = list(tickformat = "%d-%m-%Y"),
+      yaxis   = list(title = switch(
+        y_var,
+        "d18Oc"    = "δ¹⁸O (‰)",
+        "d2Hc"     = "δ²H (‰)",
+        "D_excess" = "D-excess (‰)"
       ))
     )
   }
+  
+  
   
   output$plot_O18 <- renderPlotly({
     req(data_GNIP_raw(), input$station)

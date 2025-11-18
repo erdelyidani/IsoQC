@@ -4,11 +4,12 @@ output: html_document
 ---
 
 ## v2.0.8
-**2025-11-17**
+**2025-11-18**
 
 **Added: Export time-series data feature.**  
+**Enhanced: Differences bars coloring rules.**  
 - New *“Download plot data (.csv)”* button under the map exports the currently displayed time-series data for δ¹⁸O, δ²H and D-excess.  
-- The CSV includes, for each date and variable, the selected station, all nearby stations, the nearby mean, the |site − mean| differences, and the active STD metric (STD / STD² / STD³).  
+- The CSV includes, for each date and variable, the selected station, the nearby mean, the |site − mean| differences, and the active STD×2.  
 - Each row is accompanied by the analysis context: nearby search radius (km), isotope-specific thresholds, elevation correction slopes for δ¹⁸O and δ²H, and the active date range (*From* / *To*), ensuring that exported diagnostics are fully traceable to the dashboard settings.
 
 
@@ -18,12 +19,12 @@ output: html_document
 **Enhanced:** Elevation correction is now station-centric.
 - Altitude reference for the elevation correction was changed from the dataset-wide minimum altitude to the altitude of the currently selected station, making corrected δ¹⁸O and δ²H values directly comparable to the local setting.
 
-**Added: Nearby-stations STD controls and STD-based bar colouring.**  
-- Difference bars in the δ¹⁸O, δ²H and D-excess time-series are now coloured using both the threshold and the STD metric:  
-  - Grey: difference ≤ threshold and STD metric ≤ difference.  
-  - Red: difference ≤ threshold but STD metric > difference (potentially suspicious, but still under threshold).  
+**Added: STD×2-based bar colouring.**  
+- Difference bars in the δ¹⁸O, δ²H and D-excess time-series are now coloured using both the threshold and the STD×2 metric:  
+  - Grey: difference ≤ threshold and STD×2 metric ≤ difference.  
+  - Red: difference ≤ threshold but STD×2 metric > difference (potentially suspicious, but still under threshold).  
   - Purple with red outline: difference above the configured threshold.  
-- Hover tooltips on difference bars now report both the difference and the STD metric.
+- Hover tooltips on difference bars now report both the difference and the STD×2 metric.
 
 
 ## v2.0.6
