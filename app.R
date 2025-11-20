@@ -1,5 +1,5 @@
 # app.R
-#IsoQC v2.0.8
+#IsoQC v2.0.9
 library(shiny)
 library(plotly)
 library(readxl)
@@ -118,11 +118,17 @@ ui <- fluidPage(
                   numericInput("d18O_threshold", HTML("&delta;<sup>18</sup>O Threshold (‰):"), value = 6.5),
                   numericInput("d2H_threshold",   HTML("&delta;<sup>2</sup>H Threshold (‰):"), value = 52),
                   numericInput("D_excess_threshold", "D-excess Threshold (‰):", value = 19),
-                  tags$p("Default thresholds from ",
+                  
+                  tags$p("Default thresholds based on ",
                          a("Erdélyi et al. (2024)", href="https://doi.org/10.17738/ajes.2024.0014", target="_blank", style="color:#0A92FF;"),
                          ".", style="font-size:12px;font-style:italic;color:grey;"),
+                  
                   numericInput("g_isoO", HTML("&delta;<sup>18</sup>O elev. corr. (‰/km):"), value = 1.2, step = 0.1),
                   numericInput("g_isoH", HTML("&delta;<sup>2</sup>H elev. corr. (‰/km):"), value = 7.9, step = 0.1),
+                  
+                  tags$p("Default elevation correction based on ",
+                        a("Kern et al. (2020)", href = "https://doi.org/10.3390/w12061797", target = "_blank", style = "color:#0A92FF;"),
+                       ".", style = "font-size:12px;font-style:italic;color: grey;"),
                   
                   div(
                     style = "display: none;",
@@ -158,7 +164,7 @@ ui <- fluidPage(
              font-size:12px;color:grey;border-top:1px solid #ddd;margin-top:30px;",
     HTML(paste0(
       "© 2025 2ka Paleoklíma Lendület. All rights reserved. ",
-      actionLink("show_changelog", "IsoQC v2.0.8")
+      actionLink("show_changelog", "IsoQC v2.0.9")
     ))
   ),
   
@@ -824,13 +830,7 @@ server <- function(input, output, session) {
     #  filter(Date >= dr[1] & Date <= dr[2])
     
     # δ18O: selected station, mean, diff, STD, neighbours
-    d18_sel <- fd2 %>%
-      transmute(
-        Date,
-        Variable = "d18O",
-        Legend   = input$station,
-        Value    = d18Oc
-      )
+
     d18_mean <- fd2 %>%
       transmute(
         Date,
@@ -838,20 +838,7 @@ server <- function(input, output, session) {
         Legend   = "Nearby mean",
         Value    = d18Oc_Mean
       )
-    d18_diff <- fd2 %>%
-      transmute(
-        Date,
-        Variable = "d18O",
-        Legend   = "Difference |site - mean|",
-        Value    = d18Oc_Diff
-      )
-    d18_std <- fd2 %>%
-      transmute(
-        Date,
-        Variable = "d18O",
-        Legend = "2×St.Dev.",
-        Value    = d18Oc_STD_active
-      )
+
     #d18_nei <- near %>%
     #  transmute(
     #    Date,
@@ -860,16 +847,10 @@ server <- function(input, output, session) {
     #    Value    = d18Oc
     #  )
     #d18_long <- bind_rows(d18_sel, d18_mean, d18_diff, d18_std, d18_nei)
-    d18_long <- bind_rows(d18_sel, d18_mean, d18_diff, d18_std)
+    d18_long <- bind_rows(d18_mean)
     
     # δ2H: selected station, mean, diff, STD, neighbours
-    d2H_sel <- fd2 %>%
-      transmute(
-        Date,
-        Variable = "d2H",
-        Legend   = input$station,
-        Value    = d2Hc
-      )
+
     d2H_mean <- fd2 %>%
       transmute(
         Date,
@@ -877,20 +858,7 @@ server <- function(input, output, session) {
         Legend   = "Nearby mean",
         Value    = d2Hc_Mean
       )
-    d2H_diff <- fd2 %>%
-      transmute(
-        Date,
-        Variable = "d2H",
-        Legend   = "Difference |site - mean|",
-        Value    = d2Hc_Diff
-      )
-    d2H_std <- fd2 %>%
-      transmute(
-        Date,
-        Variable = "d2H",
-        Legend = "2×St.Dev.",
-        Value    = d2Hc_STD_active
-      )
+
     #d2H_nei <- near %>%
     #  transmute(
     #    Date,
@@ -899,16 +867,10 @@ server <- function(input, output, session) {
     #    Value    = d2Hc
     #  )
     #d2H_long <- bind_rows(d2H_sel, d2H_mean, d2H_diff, d2H_std, d2H_nei)
-    d2H_long <- bind_rows(d2H_sel, d2H_mean, d2H_diff, d2H_std)
+    d2H_long <- bind_rows(d2H_mean)
     
     # D-excess: selected station, mean, diff, STD, neighbours (uncorrected)
-    dex_sel <- fd2 %>%
-      transmute(
-        Date,
-        Variable = "D_excess",
-        Legend   = input$station,
-        Value    = D_excess
-      )
+
     dex_mean <- fd2 %>%
       transmute(
         Date,
@@ -916,20 +878,7 @@ server <- function(input, output, session) {
         Legend   = "Nearby mean",
         Value    = D_excess_Mean
       )
-    dex_diff <- fd2 %>%
-      transmute(
-        Date,
-        Variable = "D_excess",
-        Legend   = "Difference |site - mean|",
-        Value    = D_excess_Diff
-      )
-    dex_std <- fd2 %>%
-      transmute(
-        Date,
-        Variable = "D_excess",
-        Legend = "2×St.Dev.",
-        Value    = D_excess_STD_active
-      )
+
     #dex_nei <- near %>%
     #  transmute(
     #    Date,
@@ -938,7 +887,7 @@ server <- function(input, output, session) {
     #    Value    = D_excess
     #  )
     #dex_long <- bind_rows(dex_sel, dex_mean, dex_diff, dex_std, dex_nei)
-    dex_long <- bind_rows(dex_sel, dex_mean, dex_diff, dex_std)
+    dex_long <- bind_rows(dex_mean)
     
     all_data <- bind_rows(d18_long, d2H_long, dex_long) %>%
       arrange(Date, Variable, Legend)

@@ -3,6 +3,12 @@ title: "Changelog"
 output: html_document
 ---
 
+## v2.0.9
+**2025-11-19**
+ 
+**Enhanced:** Exported data using the *“Download plot data (.csv)”* button is limited to nearby mean values
+
+
 ## v2.0.8
 **2025-11-18**
 
