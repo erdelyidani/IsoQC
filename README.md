@@ -56,7 +56,7 @@ After uploading, the app requests you to map the correct columns:
 
 Once completed, click **"Upload Data"** to load your dataset into IsoQC.
 
-A built‑in **PrismEU test dataset** is also available via the *Load PrismEU Database* button.
+A built‑in **test dataset** is also available via the *Use Slovenian test dataset from Hatvani et al. (2025)* button.
 
 ---
 
