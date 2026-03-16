@@ -1,27 +1,191 @@
-# IsoQC
-IsoQC is an outlier detection app specialized for observations of isotopes in precipitation.
+# Introduction
+**IsoQC** is an interactive quality‑control dashboard designed for analysing stable isotope records (δ¹⁸O and δ²H) from precipitation samples.  
+The app helps users:
 
-Instructions
-The IsoQC app (app.r) allows users to upload their own datasets to analyze stable isotope records from precipitation samples. The data upload module supports MS Excel (.xlsx, .xls) and CSV (.csv) with a maximum file size limit of 500 MB. To ensure proper functionality, the uploaded data must contain specific columns: Station (measurement station name or identifier), Date (observation date in a standard format such as DD/MM/YYYY or DD-MM-YYYY), Longitude and Latitude (geographic coordinates in decimal degrees), Altitude, d18O (‰) and d2H (‰). Date values should be properly formatted in the case of MS Excel files, and if necessary, users can manually specify the date format before finalizing the upload in the case of CSV files. Longitude and latitude must be within valid geographic ranges, and missing values are allowed. The file should not contain extra header rows, with only the first row dedicated to column names.
-A test file (data.xlsx) is also uploaded.
+- upload and inspect their own datasets,
+- visualise temporal availability,
+- compare a station’s measurements with nearby stations,
+- identify potential outliers based on thresholds,
+- export time‑series diagnostics.
 
-Technical details:
-RStudio version used: 2023.03.0+386
+This guide walks you through the complete usage of the application.
 
-Library versions:
+---
 
-shiny v1.7.5.1
-plotly v4.10.3
-readxl v1.4.3
-dplyr v1.1.3
-geosphere v1.5-18
-sf v1.0-14
-lubridate v1.9.3
-tidyr v1.3.0
-zoo v1.8-12
-leaflet 2.2.0
-bslib v0.5.1
-markdown v1.13
+# 1. Uploading Your Data
 
-Live version:
-https://erdelyidani.shinyapps.io/IsoQC/
+## Supported file types
+You may upload the following:
+
+- **Excel files**: `.xlsx`, `.xls`
+- **CSV files**: `.csv`
+- Maximum file size: **500 MB**
+
+## Required columns
+Your uploaded dataset **must** contain:
+
+- **Station** – station name or code  
+- **Date** – observation date (`DD/MM/YYYY`, `YYYY-MM-DD`, etc.)  
+- **Latitude** – decimal degrees  
+- **Longitude** – decimal degrees  
+- **Altitude** – metres above sea level  
+- **δ¹⁸O** (‰)  
+- **δ²H** (‰)
+
+### Additional rules
+- If using **Excel**, ensure that the Date column has proper date formatting.
+- For **CSV**, you may manually specify:
+  - delimiter (comma / semicolon / tab),
+  - date format (any `lubridate`-compatible format, e.g. `%d/%m/%Y`).
+- Rows with **both δ¹⁸O and δ²H missing** are automatically removed.
+- The **first row must contain column names only** (no multi‑header files).
+
+---
+
+# 2. Column Mapping
+
+After uploading, the app requests you to map the correct columns:
+
+- Station name  
+- Altitude  
+- Latitude  
+- Longitude  
+- Date  
+- δ¹⁸O  
+- δ²H  
+
+Once completed, click **"Upload Data"** to load your dataset into IsoQC.
+
+A built‑in **PrismEU test dataset** is also available via the *Load PrismEU Database* button.
+
+---
+
+# 3. Data Preview and Availability
+
+## Dataset preview
+The app displays:
+
+- a **raw preview** (first rows of your file),
+- a **mapped preview** (only the required and selected columns).
+
+## Station availability plot
+You can visualise how many stations have data in a given period at:
+
+- **Daily resolution**
+- **Monthly resolution**
+- **Yearly resolution**
+
+This helps identify data gaps and temporal coverage issues.
+
+---
+
+# 4. Using the Dashboard
+
+Once your dataset is imported, the **Dashboard** tab activates the core functionality.
+
+## 4.1 Station selection
+Choose a station from the searchable dropdown.  
+The app will automatically:
+
+- focus the map on the selected station,  
+- refresh the date range bounds,  
+- update all plots.
+
+## 4.2 Nearby stations and thresholds
+You can customise:
+
+- **Search radius** (km) for selecting nearby stations
+- Thresholds for:
+  - δ¹⁸O  
+  - δ²H  
+  - D‑excess  
+- Elevation‑correction parameters (default: Kern et al. 2020)
+
+Nearby stations appear on the map:
+
+- **Blue** → selected station  
+- **Dark grey** → nearby stations within radius  
+- **Light grey** → other stations  
+- Black lines show station–neighbour distances.
+
+---
+
+# 5. Date Range Handling
+
+IsoQC includes an advanced date‑range controller:
+
+- A **slider** for fast interval selection  
+- Direct **From** / **To** date inputs  
+- A **Reset date range** button  
+- Station‑specific date limits  
+- Smooth interaction: recalculation happens only after final slider release
+
+If data are unavailable in the chosen interval, the app warns you (e.g., no δ¹⁸O or no δ²H).
+
+---
+
+# 6. Time-Series Plots
+
+IsoQC provides multiple diagnostic plots, including:
+
+### **δ¹⁸O corrected**
+### **δ²H corrected**
+### **D‑excess**
+### **δ²H vs. δ¹⁸O (XY plot)**
+
+For each variable:
+
+- The selected station is shown in **colour**.
+- Nearby stations appear in **grey**.
+- The nearby average appears as a **black dashed line**.
+- Difference bars use an interpretative colour scheme:
+  - **Light grey** → below threshold  
+  - **Dark grey** → below threshold but above 2×SD  
+  - **Purple** → above threshold  
+  - **Purple with black outline** → strongly suspicious (above threshold & above 2×SD)
+
+The XY plot distinguishes:
+
+- All points  
+- Points under thresholds  
+- Points above thresholds
+
+---
+
+# 7. Exporting Time-Series Data
+
+Use the **Download mean time series** button to export a `.csv` containing:
+
+- Selected station values  
+- Nearby mean values  
+- Differences  
+- Date range metadata  
+- Thresholds  
+- Elevation correction parameters  
+- Search radius  
+
+The export includes UTF‑8 encoding with BOM for Excel compatibility.
+
+---
+
+# 8. Filling Missing Months (Optional)
+
+If the dataset contains gaps for a specific month, you may:
+
+1. Insert a **dummy numeric value** for that month in your original file.
+2. Upload the updated file again.
+
+IsoQC will compute an average for that month, which can be used as an estimated replacement.
+
+---
+
+# 9. Data Privacy Notice
+
+The IsoQC app **does not store any user-uploaded data**.  
+All uploaded files are:
+
+- processed in memory,
+- used only for temporary on‑screen analysis,
+- deleted automatically when the session ends.
+
+---
