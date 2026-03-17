@@ -1,3 +1,8 @@
+---
+title: "User Guide – IsoQC Application"
+output: html_document
+---
+
 # Introduction
 **IsoQC** is an interactive quality‑control dashboard designed for analysing stable isotope records (δ¹⁸O and δ²H) from precipitation samples.  
 The app helps users:
@@ -56,7 +61,7 @@ After uploading, the app requests you to map the correct columns:
 
 Once completed, click **"Upload Data"** to load your dataset into IsoQC.
 
-A built‑in **test dataset** is also available via the *Use Slovenian test dataset from Hatvani et al. (2025)* button.
+A built‑in **PrismEU test dataset** is also available via the *Load PrismEU Database* button.
 
 ---
 
@@ -181,11 +186,31 @@ IsoQC will compute an average for that month, which can be used as an estimated 
 
 # 9. Data Privacy Notice
 
-The IsoQC app **does not store any user-uploaded data**.  
-All uploaded files are:
+The IsoQC app **does not store any user-uploaded datasets**.
 
-- processed in memory,
-- used only for temporary on‑screen analysis,
-- deleted automatically when the session ends.
+Uploaded files are:
+
+- processed in memory for the active session,
+- used only for temporary on-screen analysis,
+- released when the session ends.
+
+To support maintenance and basic usage statistics, the app stores a limited set of **server-side usage metrics**. These metrics may include:
+
+- session start time,
+- session end time,
+- session duration,
+- the active tab viewed in the app,
+
+These usage metrics are used only for app maintenance, stability monitoring, and aggregated usage analysis.
 
 ---
+
+# Need help?
+If you encounter any unexpected behaviour, refer to:
+
+- the **Changelog** for known updates and fixes,
+- contact the developer: <a href="https://github.com/erdelyidani/IsoQC" target="_blank">
+  IsoQC GitHub repository
+</a>
+
+Thank you for using **IsoQC**!
