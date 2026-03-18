@@ -1,3 +1,7 @@
+---
+title: "User Guide – IsoQC Application"
+output: html_document
+---
 
 # Introduction
 **IsoQC** is an interactive quality‑control dashboard designed for analysing stable isotope records (δ¹⁸O and δ²H) from precipitation samples.  
@@ -57,7 +61,7 @@ After uploading, the app requests you to map the correct columns:
 
 Once completed, click **"Upload Data"** to load your dataset into IsoQC.
 
-A built‑in **PrismEU test dataset** is also available via the *Load PrismEU Database* button.
+A built‑in **test dataset** is also available via the *Use Slovenian test dataset from Hatvani et al. (2025)* button.
 
 ---
 
@@ -113,13 +117,9 @@ Nearby stations appear on the map:
 
 # 5. Date Range Handling
 
-IsoQC includes an advanced date‑range controller:
-
-- A **slider** for fast interval selection  
-- Direct **From** / **To** date inputs  
-- A **Reset date range** button  
-- Station‑specific date limits  
-- Smooth interaction: recalculation happens only after final slider release
+IsoQC includes a date‑range controller:
+ 
+- Direct **From** / **To** date inputs   
 
 If data are unavailable in the chosen interval, the app warns you (e.g., no δ¹⁸O or no δ²H).
 
@@ -169,14 +169,14 @@ The export includes UTF‑8 encoding with BOM for Excel compatibility.
 
 ---
 
-# 8. Filling Missing Months (Optional)
+# 8. Filling Missing Months/Days (Optional)
 
-If the dataset contains gaps for a specific month, you may:
+If the dataset contains gaps for a specific month/day, you may:
 
-1. Insert a **dummy numeric value** for that month in your original file.
+1. Insert a **dummy numeric value** for that month/day in your original file.
 2. Upload the updated file again.
 
-IsoQC will compute an average for that month, which can be used as an estimated replacement.
+IsoQC will compute an average for that month/day, which can be used as an estimated replacement.
 
 ---
 
