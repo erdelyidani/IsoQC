@@ -1,7 +1,3 @@
----
-title: "User Guide – IsoQC Application"
-output: html_document
----
 
 # Introduction
 **IsoQC** is an interactive quality‑control dashboard designed for analysing stable isotope records (δ¹⁸O and δ²H) from precipitation samples.  
