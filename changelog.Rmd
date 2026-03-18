@@ -2,6 +2,13 @@
 title: "Changelog"
 output: html_document
 ---
+## v2.1.1
+**2026-03-17**
+
+**Added:** Built-in usage logging.
+- Added server-side SQLite usage logging to support usage analytics.
+- The IsoQC app **does not store any user-uploaded datasets** (for more information, check paragraph 9 in the Instructions tab).
+
 
 ## v2.1.0
 **2025-12-03**

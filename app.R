@@ -1,4 +1,6 @@
-#IsoQC v2.1.0
+# app.R
+#IsoQC v2.1.1
+app_version <- "v2.1.1"
 library(shiny)
 library(plotly)
 library(readxl)
@@ -11,11 +13,16 @@ library(zoo)
 library(leaflet)
 library(bslib)
 library(markdown)
-
+library(DBI)
+library(RSQLite)
+#FILEUPLOAD
+#setwd("G:/.shortcut-targets-by-id/1nGS-HGeaX1tlVpCzh-L9D4HzZAFszMzL/GNIP data filtering/fileupload_version")
+# --- Helper: wrap long legend names every 16 chars with newline ---
 wrap_name <- function(x) {
   gsub("(.{17})", "\\1\n", x)
 }
 
+# --- Helper: split data by month, inserting gaps ---
 split_data_by_month <- function(df, x_var, y_var) {
   df <- as.data.frame(df)[order(df[[x_var]]), ]
   df$ym <- zoo::as.yearmon(df[[x_var]])
@@ -38,8 +45,9 @@ split_data_by_month <- function(df, x_var, y_var) {
   out
 }
 
+#empty df
 data_GNIP_raw <- reactiveVal(NULL)
-
+# --- Build reactive helpers object ---
 rebuild_helpers <- function(df) {
   sts <- df %>%
     distinct(Station, Latitude, Longitude) %>%
@@ -55,8 +63,68 @@ rebuild_helpers <- function(df) {
 }
 helpers <- reactive({ rebuild_helpers(data_GNIP_raw()) })
 
+metrics_dir <- "logs"
+if (!dir.exists(metrics_dir)) {
+  dir.create(metrics_dir, recursive = TRUE, showWarnings = FALSE)
+}
+metrics_db_path <- file.path(metrics_dir, "isoqc_usage.sqlite")
 
-#UI
+init_metrics_db <- function() {
+  tryCatch({
+    con <- DBI::dbConnect(RSQLite::SQLite(), metrics_db_path)
+    on.exit(DBI::dbDisconnect(con), add = TRUE)
+    DBI::dbExecute(con, "PRAGMA journal_mode = WAL;")
+    DBI::dbExecute(con, "PRAGMA busy_timeout = 5000;")
+    DBI::dbExecute(
+      con,
+      "CREATE TABLE IF NOT EXISTS usage_events (
+         id INTEGER PRIMARY KEY AUTOINCREMENT,
+         event_ts_utc TEXT NOT NULL,
+         event_type TEXT NOT NULL,
+         app_version TEXT NOT NULL,
+         session_token TEXT,
+         tab_name TEXT,
+         duration_sec INTEGER,
+         details TEXT
+       )"
+    )
+    invisible(TRUE)
+  }, error = function(e) {
+    warning(sprintf("Usage metrics DB init failed: %s", conditionMessage(e)), call. = FALSE)
+    invisible(FALSE)
+  })
+}
+
+log_usage_event <- function(session, event_type, tab_name = NA_character_, duration_sec = NA_integer_, details = NA_character_) {
+  tryCatch({
+    con <- DBI::dbConnect(RSQLite::SQLite(), metrics_db_path)
+    on.exit(DBI::dbDisconnect(con), add = TRUE)
+    DBI::dbExecute(con, "PRAGMA busy_timeout = 5000;")
+    DBI::dbExecute(
+      con,
+      "INSERT INTO usage_events (event_ts_utc, event_type, app_version, session_token, tab_name, duration_sec, details)
+       VALUES (?, ?, ?, ?, ?, ?, ?)",
+      params = list(
+        format(Sys.time(), tz = "UTC", usetz = TRUE),
+        as.character(event_type),
+        app_version,
+        as.character(session$token),
+        if (is.null(tab_name) || !length(tab_name) || is.na(tab_name) || !nzchar(as.character(tab_name))) NA_character_ else as.character(tab_name),
+        if (is.null(duration_sec) || !length(duration_sec) || is.na(duration_sec)) NA_integer_ else as.integer(duration_sec),
+        if (is.null(details) || !length(details) || is.na(details) || !nzchar(as.character(details))) NA_character_ else as.character(details)
+      )
+    )
+    invisible(TRUE)
+  }, error = function(e) {
+    warning(sprintf("Usage metrics write failed: %s", conditionMessage(e)), call. = FALSE)
+    invisible(FALSE)
+  })
+}
+
+init_metrics_db()
+
+
+# --- UI ---
 ui <- fluidPage(
   tags$head(tags$script(src = "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js")),
   div(
@@ -86,13 +154,13 @@ ui <- fluidPage(
                 sidebarPanel(
                   fileInput("file", "Upload Data (.xlsx, .xls or .csv)"),
                   
-
+                  # 1) CSV‐only controls (delimiter & date-format)
                   uiOutput("csv_controls"),
                   
-
+                  # 2) Column‐mapping + Import button
                   uiOutput("column_mapping_ui"),
                   
-
+                  # always show the test-dataset link
                   tags$p(
                     em(actionLink("load_test_data",
                                   "Use Slovenian test dataset from Hatvani et al. (2025)")),
@@ -103,7 +171,7 @@ ui <- fluidPage(
                 ,
                 mainPanel(
                   conditionalPanel(
-                    condition = "input.map_station",
+                    condition = "input.map_station",    ## only truthy once the mapping UI exists
                     h5("Preview (first 10 rows)"),
                     tableOutput("mapped_preview_table"),
                     br(),
@@ -133,8 +201,8 @@ ui <- fluidPage(
                   numericInput("g_isoH", HTML("&delta;<sup>2</sup>H elev. corr. (‰/km):"), value = 7.9, step = 0.1),
                   
                   tags$p("Default elevation correction based on ",
-                         a("Kern et al. (2020)", href = "https://doi.org/10.3390/w12061797", target = "_blank", style = "color:#0A92FF;"),
-                         ".", style = "font-size:12px;font-style:italic;color: grey;"),
+                        a("Kern et al. (2020)", href = "https://doi.org/10.3390/w12061797", target = "_blank", style = "color:#0A92FF;"),
+                       ".", style = "font-size:12px;font-style:italic;color: grey;"),
                   
                   div(
                     style = "display: none;",
@@ -164,10 +232,21 @@ ui <- fluidPage(
               tabPanel("Instructions", includeMarkdown("instructions.Rmd"))
   ),
   
+  
   tags$footer(
     style = "width:100%;text-align:center;padding:10px;background:white;
            font-size:12px;color:grey;border-top:1px solid #ddd;margin-top:30px;",
-    "© 2025 ",
+    
+    "© 2026 ",
+    
+    tags$a(
+      href   = "https://geochem.hu/",
+      target = "_blank",
+      rel    = "noopener noreferrer",
+      "HUN-REN CSFK FGI"
+    ),
+    
+    ". Developed by ",
     
     tags$a(
       href   = "https://paleoclimate2ka.geochem.hu/",
@@ -178,7 +257,7 @@ ui <- fluidPage(
     
     ". All rights reserved. ",
     
-    actionLink("show_changelog", "IsoQC v2.1.0")
+    actionLink("show_changelog", paste("IsoQC", app_version))
   )
   ,
   
@@ -191,34 +270,65 @@ ui <- fluidPage(
   
 )
 
-#Server
+# --- Server logic ---
 server <- function(input, output, session) {
   
-  observeEvent(input$any_modal_closed, { suppress_data_warnings(FALSE) })
+  session_started_at <- Sys.time()
+  log_usage_event(session, "session_start")
 
-  skip_first_warning <- reactiveVal(FALSE)
-  station_changed <- reactiveVal(FALSE)
-  last_action <- reactiveVal(NULL)
-  suppress_data_warnings <- reactiveVal(FALSE)
-  last_warn_key <- reactiveVal(NULL)
+  observeEvent(input$main_tabs, {
+    req(input$main_tabs)
+    log_usage_event(session, "tab_view", tab_name = input$main_tabs)
+  }, ignoreInit = FALSE)
+
+  observeEvent(input$import_data, {
+    log_usage_event(session, "import_data_click", tab_name = isolate(input$main_tabs))
+  }, ignoreInit = TRUE)
+
+  observeEvent(input$load_test_data, {
+    log_usage_event(session, "load_test_data_click", tab_name = isolate(input$main_tabs))
+  }, ignoreInit = TRUE)
+
+  observeEvent(input$download_plot_data, {
+    log_usage_event(session, "download_export_click", tab_name = isolate(input$main_tabs))
+  }, ignoreInit = TRUE)
+
+  observeEvent(input$any_modal_closed, { suppress_data_warnings(FALSE) })
   
+  # Skip the very first availability warning after (re)loading data
+  skip_first_warning <- reactiveVal(FALSE)
+  
+  
+  # --- Context & guards ---
+  station_changed <- reactiveVal(FALSE)     # user has changed station at least once
+  last_action <- reactiveVal(NULL)          # "selection" or "changelog"
+  suppress_data_warnings <- reactiveVal(FALSE)  # TRUE while changelog modal is up
+  last_warn_key <- reactiveVal(NULL)        # to avoid repeating the same popup
+  
+  # User selection: station (ignore initial programmatic selection)
   observeEvent(input$station, {
     station_changed(TRUE)
     last_action("selection")
   }, ignoreInit = TRUE)
-
+  
+  
+  
+  ####
+  # User selection: date changes (both sources)
   observeEvent(input$date_range, { last_action("selection") }, ignoreInit = TRUE)
   observeEvent(list(input$date_min, input$date_max), {
     last_action("selection")
   }, ignoreInit = TRUE)
   
+  
   observeEvent(input$show_changelog, {
+    log_usage_event(session, "changelog_open", tab_name = isolate(input$main_tabs))
     last_action("changelog")
     suppress_data_warnings(TRUE)
     showModal(modalDialog(
       title = "IsoQC Changelog",
       size  = "l",
-      easyClose = TRUE,
+      easyClose = TRUE,   # <-- most félrekattintásra és ESC-re is zár
       footer = tagList(actionButton("close_changelog", "Close")),
       includeMarkdown("changelog.Rmd")
     ))
@@ -228,7 +338,10 @@ server <- function(input, output, session) {
     suppress_data_warnings(FALSE)
     removeModal()
   })
+  #### 
   
+  # Column‐mapping UI
+  # 1) Drive the CSV-vs-Excel inputs + Upload button
   output$csv_controls <- renderUI({
     req(input$file)  
     ext <- tolower(tools::file_ext(input$file$name))
@@ -242,14 +355,16 @@ server <- function(input, output, session) {
     }
   })
   output$column_mapping_ui <- renderUI({
-    req(input$file)
+    req(input$file)                # must have a file
     ext <- tolower(tools::file_ext(input$file$name))
     
     if (ext == "csv") {
-
+      # for CSV, require both csv_delim and date_format before mapping
       req(input$csv_delim, input$date_format)
     }
-
+    # for Excel, no extra req beyond input$file
+    
+    # read just the header to get column names
     cols <- switch(ext,
                    csv  = names(read.csv(input$file$datapath,
                                          sep = input$csv_delim, nrows = 1)),
@@ -257,7 +372,8 @@ server <- function(input, output, session) {
                    xls  = names(read_excel(input$file$datapath, n_max = 0))
     )
     cols <- make.unique(cols)
-
+    
+    # emit mapping selectors AND the Import button
     tagList(
       selectInput("map_station", "Station name column:", cols),
       selectInput("map_alt",     "Altitude column:",      cols,
@@ -272,10 +388,14 @@ server <- function(input, output, session) {
                   selected = grep("O18", cols, ignore.case=TRUE, value=TRUE)[1]),
       selectInput("map_H2",      HTML("&delta;<sup>2</sup>H (‰) column:"),  cols,
                   selected = grep("H2",  cols, ignore.case=TRUE, value=TRUE)[1]),
+      
+      # only now does Upload Data appear
       actionButton("import_data", "Upload Data", icon = icon("upload"))
     )
   })
-
+  
+  # Preview
+  # Top preview: raw data (first 5 rows)
   raw_preview_data <- reactive({
     req(input$file)
     ext <- tolower(tools::file_ext(input$file$name))
@@ -286,7 +406,8 @@ server <- function(input, output, session) {
     )
     head(raw, 5)
   })
-
+  
+  # Bottom preview: mapped columns only
   mapped_preview_data <- reactive({
     req(input$file, input$map_station, input$map_alt, input$map_lat, input$map_lon, input$map_date, input$map_O18, input$map_H2)
     ext <- tolower(tools::file_ext(input$file$name))
@@ -295,7 +416,7 @@ server <- function(input, output, session) {
                   "xlsx" = read_excel(input$file$datapath),
                   "xls" = read_excel(input$file$datapath)
     )
-
+    # Avoid renaming conflicts
     if ("Station" %in% names(raw)) {
       names(raw)[names(raw) == "Station"] <- "Station_original"
     }
@@ -327,6 +448,7 @@ server <- function(input, output, session) {
       head(10)
   })
   
+  
   preview_data <- reactive({
     req(input$file, input$map_station, input$map_alt, input$map_lat, input$map_lon, input$map_date, input$map_O18, input$map_H2)
     ext <- tolower(tools::file_ext(input$file$name))
@@ -356,6 +478,8 @@ server <- function(input, output, session) {
       )
   })
   
+  
+  
   output$preview_table <- renderTable({
     head(preview_data(), 10)
   })
@@ -367,9 +491,11 @@ server <- function(input, output, session) {
   output$station_data_plot <- renderPlotly({
     req(preview_data(), input$resolution)
     df <- preview_data()
-
+    
+    # parse your formatted dates back to Date
     df$Date <- as.Date(df$Date, format = "%d/%m/%Y")
-
+    
+    # bin into periods
     df$Period <- switch(
       input$resolution,
       "day"   = df$Date,
@@ -392,22 +518,26 @@ server <- function(input, output, session) {
         names_to = "Isotope",
         values_to = "Station_Count"
       )
-
+    
+    # először jelöljük, melyik melyik
     summary_df$Isotope <- ifelse(summary_df$Isotope == "d18O_stations", "d18O", "d2H")
-
+    
+    # majd adjunk szép labelt: δ¹⁸O és δ²H
     summary_df$Isotope <- factor(
       summary_df$Isotope,
       levels = c("d18O", "d2H"),
       labels = c("δ¹⁸O", "δ²H")
     )
-
+    
+    # choose the date format for hover
     date_fmt <- switch(
       input$resolution,
       "day"   = "%d/%m/%Y",
       "month" = "%m/%Y",
       "year"  = "%Y"
     )
-
+    
+    # build a hovertemplate: formatted date + station count
     hover_tmpl <- paste0("%{x|", date_fmt, "}<br>Count: %{y}<extra></extra>")
     
     plot_ly(
@@ -415,6 +545,7 @@ server <- function(input, output, session) {
       x = ~Period,
       y = ~Station_Count,
       color = ~Isotope,
+      # faktor szintek sorrendje: δ¹⁸O, δ²H → ezekhez jönnek a színek
       colors = c("#0A92FF", "red"),
       type = "scatter",
       mode = "lines+markers",
@@ -427,6 +558,11 @@ server <- function(input, output, session) {
       )
   })
   
+  
+  
+  
+  
+  # 2) Import data into the main reactive
   observeEvent(input$import_data, {
     
     req(input$file, input$map_station)
@@ -437,6 +573,7 @@ server <- function(input, output, session) {
                   "xls"  = read_excel(input$file$datapath)
     )
     
+    # Remove or rename existing 'Station' column to avoid conflict
     if ("Station" %in% names(raw)) {
       names(raw)[names(raw) == "Station"] <- "Station_original"
     }
@@ -464,6 +601,7 @@ server <- function(input, output, session) {
     
     data_GNIP_raw(df)
     skip_first_warning(TRUE)
+    # then your existing code to update inputs…
     dr <- range(df$Date)
     updateSelectizeInput(session, "station",
                          choices = sort(unique(df$Station)),
@@ -481,6 +619,7 @@ server <- function(input, output, session) {
     updateTabsetPanel(session, "main_tabs", selected = "Dashboard")
   })
   observeEvent(input$load_test_data, {
+    # 1) Read the Excel test file
     df_test <- read_excel("data.xlsx", sheet = "Sheet 1") %>%
       select(Site, Date, Longitude, Latitude, Altitude, O18, H2) %>%
       rename(
@@ -494,16 +633,21 @@ server <- function(input, output, session) {
         D_excess = d2H - 8 * d18O
       ) %>%
       select(Station, Date, Longitude, Latitude, Altitude, d18O, d2H, D_excess)
+    
+    # 2) Push it into your reactiveVal
     data_GNIP_raw(df_test)
     skip_first_warning(TRUE)
+    #compute safe date‐range
     dates <- df_test$Date
     good  <- dates[!is.na(dates)]
     dr <- if (length(good)) range(good) else c(Sys.Date(), Sys.Date())
     
+    # update station selector
     updateSelectizeInput(session, "station",
                          choices  = sort(unique(df_test$Station)),
                          selected = sort(unique(df_test$Station))[1])
     
+    # update date‐range slider + dateInputs
     updateSliderInput(
       session, "date_range",
       min        = dr[1],
@@ -514,19 +658,27 @@ server <- function(input, output, session) {
     updateDateInput(session, "date_min", value = dr[1])
     updateDateInput(session, "date_max", value = dr[2])
     
+    # finally switch to Dashboard
     updateTabsetPanel(session, "main_tabs", selected = "Dashboard")
   })
   
+  
+  # Debounced reactive for date_range
   debounced_date_range <- debounce(reactive(input$date_range), 2000)
+  
+  # Debounced reactive for date_min and date_max
   debounced_date_min <- debounce(reactive(input$date_min), 2000)
   debounced_date_max <- debounce(reactive(input$date_max), 2000)
   
+  
+  # Sync slider → dateInputs with delay
   observe({
     dr <- debounced_date_range()
     updateDateInput(session, "date_min", value = as.Date(dr[1]))
     updateDateInput(session, "date_max", value = as.Date(dr[2]))
   })
-
+  
+  # Sync dateInputs → slider with delay
   observe({
     a <- debounced_date_min()
     b <- debounced_date_max()
@@ -534,16 +686,21 @@ server <- function(input, output, session) {
                       value = c(min(a, b), max(a, b)),
                       timeFormat = "%d-%m-%Y")
   })
-
+  
+  
+  
+  # When the user clicks a station on the map, update the station dropdown
   observeEvent(input$map_marker_click, {
     click <- input$map_marker_click
-    req(click$id)
+    req(click$id)  # make sure there's an ID
     updateSelectizeInput(session, "station", selected = click$id)
-
+    
+    # (optional) pan/zoom the map to the clicked station
     leafletProxy("map") %>% 
       setView(lng = click$lng, lat = click$lat, zoom = 6)
   })
-
+  
+  # --- Selected station altitude for elevation correction ---
   selected_station_altitude <- reactive({
     req(input$station, data_GNIP_raw())
     df <- data_GNIP_raw()
@@ -551,10 +708,11 @@ server <- function(input, output, session) {
     alt_vec <- alt_vec[!is.na(alt_vec)]
     if (length(alt_vec) == 0) 0 else alt_vec[1]
   })
-
+  
+  # Reactive data transforms
   correctedData <- reactive({
     df <- data_GNIP_raw()
-    refAlt <- selected_station_altitude()
+    refAlt <- selected_station_altitude()  # use altitude of selected station
     df %>% mutate(
       # based on line 321 (https://github.com/istvan60/SPbI/blob/main/v4)
       d18Oc = d18O + ((Altitude - refAlt)*input$g_isoO/1000),
@@ -606,6 +764,7 @@ server <- function(input, output, session) {
     )
   })
   
+  
   selected_station_coords <- reactive({
     req(input$station)
     helpers_data <- helpers()
@@ -616,14 +775,18 @@ server <- function(input, output, session) {
       NULL
     }
   })
-
+  
+  
+  # Build a key that changes on (station, date_range)
   availability_key <- reactive({
     req(input$station, input$date_range)
     paste(input$station, as.character(as.Date(input$date_range)), collapse = "|")
   })
   
   observeEvent(availability_key(), {
-
+    # Only warn for user-triggered selection changes,
+    # not during app init, not while changelog is open.
+    
     if (isTRUE(skip_first_warning())) {
       skip_first_warning(FALSE)
       return(invisible(NULL))
@@ -637,6 +800,7 @@ server <- function(input, output, session) {
     sd_sub <- selected_station_data() %>%
       dplyr::filter(Date >= dr[1], Date <= dr[2])
     
+    # Determine availability strictly on the selected station's raw values
     has_O18 <- nrow(sd_sub) > 0 && any(!is.na(sd_sub$d18O))
     has_H2  <- nrow(sd_sub) > 0 && any(!is.na(sd_sub$d2H))
     
@@ -645,10 +809,12 @@ server <- function(input, output, session) {
     if (!has_H2)  missing <- c(missing, "δ<sup>2</sup>H")
     
     if (length(missing) == 0) {
+      # reset last shown key so future missing states can notify again
       last_warn_key(NULL)
       return(invisible(NULL))
     }
     
+    # De-dup: only show if this (station, range, which-missing) changed
     key <- paste(input$station, format(dr[1]), format(dr[2]), paste(missing, collapse = "&"))
     if (identical(last_warn_key(), key)) return(invisible(NULL))
     last_warn_key(key)
@@ -671,6 +837,8 @@ server <- function(input, output, session) {
     ))
   })
   
+  
+  # Map with initial distances
   output$map <- renderLeaflet({
     req(data_GNIP_raw(), input$station)
     sts <- helpers()$stations
@@ -680,11 +848,11 @@ server <- function(input, output, session) {
         lng = ~lon, lat = ~lat,
         layerId = ~Station,
         radius = 5,
-        fillColor   = "#D3D3D3",
+        fillColor   = "#D3D3D3",  # other stations
         fillOpacity = 0.7,
-        stroke      = TRUE,
-        color       = "black",
-        weight      = 1,
+        stroke      = TRUE,       # enable stroke
+        color       = "black",    # black outline
+        weight      = 1,          # outline thickness
         label       = ~Station,
         labelOptions = labelOptions(direction = "auto", textsize = "12px")
       ) %>%
@@ -725,9 +893,9 @@ server <- function(input, output, session) {
           data = other_sts, lng = ~lon, lat = ~lat,
           layerId = ~Station, radius = 5,
           fillColor   = "#D3D3D3", fillOpacity = 0.7, 
-          stroke      = TRUE,
-          color       = "black",
-          weight      = 0.5,
+          stroke      = TRUE,       # enable stroke
+          color       = "black",    # black outline
+          weight      = 0.5,          # outline thickness
           label = ~Station, labelOptions = labelOptions(direction = "auto")
         )
     }
@@ -738,9 +906,9 @@ server <- function(input, output, session) {
           data = near_sts, lng = ~lon, lat = ~lat,
           layerId = ~Station, radius = 6,
           fillColor   = "#666666", fillOpacity = 0.8,
-          stroke      = TRUE,
-          color       = "black",
-          weight      = 0.5,
+          stroke      = TRUE,       # enable stroke
+          color       = "black",    # black outline
+          weight      = 0.5,          # outline thickness
           label = ~Station, labelOptions = labelOptions(direction = "auto")
         )
     }
@@ -751,9 +919,9 @@ server <- function(input, output, session) {
           data = sel, lng = ~lon, lat = ~lat,
           layerId = ~Station, radius = 7,
           fillColor   = "#0A92FF", fillOpacity = 1,
-          stroke      = TRUE,
-          color       = "black",
-          weight      = 1,
+          stroke      = TRUE,       # enable stroke
+          color       = "black",    # black outline
+          weight      = 1,          # outline thickness
           label = ~Station, labelOptions = labelOptions(direction = "auto")
         )
     }
@@ -768,6 +936,7 @@ server <- function(input, output, session) {
     }
   })
   
+  # ---------- EXPORT DATA FOR PLOTS ----------
   plot_export_data <- reactive({
     req(data_GNIP_raw(), input$station)
     fd <- filtered_data()
@@ -786,6 +955,14 @@ server <- function(input, output, session) {
         D_excess_STD_active = 2 * D_excess_SD
       )
     
+    
+    
+    # Nearby station data in current range
+    #near <- nearby_station_data() %>%
+    #  filter(Date >= dr[1] & Date <= dr[2])
+    
+    # δ18O: selected station, mean, diff, STD, neighbours
+
     d18_mean <- fd2 %>%
       transmute(
         Date,
@@ -794,8 +971,18 @@ server <- function(input, output, session) {
         Value    = d18Oc_Mean
       )
 
+    #d18_nei <- near %>%
+    #  transmute(
+    #    Date,
+    #    Variable = "d18O",
+    #    Legend   = Station,
+    #    Value    = d18Oc
+    #  )
+    #d18_long <- bind_rows(d18_sel, d18_mean, d18_diff, d18_std, d18_nei)
     d18_long <- bind_rows(d18_mean)
     
+    # δ2H: selected station, mean, diff, STD, neighbours
+
     d2H_mean <- fd2 %>%
       transmute(
         Date,
@@ -804,8 +991,18 @@ server <- function(input, output, session) {
         Value    = d2Hc_Mean
       )
 
+    #d2H_nei <- near %>%
+    #  transmute(
+    #    Date,
+    #    Variable = "d2H",
+    #    Legend   = Station,
+    #    Value    = d2Hc
+    #  )
+    #d2H_long <- bind_rows(d2H_sel, d2H_mean, d2H_diff, d2H_std, d2H_nei)
     d2H_long <- bind_rows(d2H_mean)
     
+    # D-excess: selected station, mean, diff, STD, neighbours (uncorrected)
+
     dex_mean <- fd2 %>%
       transmute(
         Date,
@@ -814,6 +1011,14 @@ server <- function(input, output, session) {
         Value    = D_excess_Mean
       )
 
+    #dex_nei <- near %>%
+    #  transmute(
+    #    Date,
+    #    Variable = "D_excess",
+    #    Legend   = Station,
+    #    Value    = D_excess
+    #  )
+    #dex_long <- bind_rows(dex_sel, dex_mean, dex_diff, dex_std, dex_nei)
     dex_long <- bind_rows(dex_mean)
     
     all_data <- bind_rows(d18_long, d2H_long, dex_long) %>%
@@ -832,6 +1037,7 @@ server <- function(input, output, session) {
       )
   })
   
+  
   output$download_plot_data <- downloadHandler(
     filename = function() {
       paste0("IsoQC_timeseries_", input$station, "_", Sys.Date(), ".csv")
@@ -840,13 +1046,20 @@ server <- function(input, output, session) {
       df_out <- plot_export_data()
       if (is.null(df_out)) df_out <- data.frame()
       
+      # 1) minden karakteroszlopot biztosan UTF-8-ra állítunk
       df_out[] <- lapply(df_out, function(col) {
         if (is.character(col)) enc2utf8(col) else col
       })
       
-      con <- file(file, open = "wb")
+      # 2) megnyitjuk a célfájlt, beírjuk a UTF-8 BOM-ot, majd CSV-be írjuk
+      con <- file(file, open = "wb")          # bináris, hogy a BOM biztosan pontos legyen
       on.exit(close(con), add = TRUE)
+      
+      # UTF-8 BOM
       writeBin(charToRaw("\ufeff"), con)
+      
+      # A write.table-nek/ write.csv-nek *nem* adjuk át újra a file nevét, hanem a con-t
+      # Figyelem: write.csv 'fileEncoding' nélkül is működik, mivel a con már UTF-8-as.
       utils::write.table(
         df_out,
         file = con,
@@ -858,13 +1071,20 @@ server <- function(input, output, session) {
       )
     }
   )
-
+  
+  
+  # Time‐series plots
+  # y_var: value at selected station (corrected)
+  # mean_var: nearby mean (by date)
+  # sd_var: nearby SD (by date; base SD)
+  # diff_var: |station - nearby mean|
   generate_plot <- function(y_var, mean_var, sd_var, diff_var, color, thr_input) {
     fd <- filtered_data()
     nd <- nearby_station_data() %>%
       filter(Date >= input$date_range[1] & Date <= input$date_range[2])
     p <- plot_ly()
-
+    
+    # Nearby stations time-series (grey)
     for (stn in sort(unique(nd$Station))) {
       sub <- nd %>% filter(Station == stn)
       sl  <- split_data_by_month(sub, "Date", y_var)
@@ -879,6 +1099,7 @@ server <- function(input, output, session) {
       }
     }
     
+    # Selected station (colored line)
     sel_l <- split_data_by_month(fd, "Date", y_var)
     p <- p %>% add_trace(
       data = sel_l, x = ~Date, y = sel_l[[y_var]],
@@ -888,6 +1109,7 @@ server <- function(input, output, session) {
       name = input$station
     )
     
+    # Nearby mean (black dashed)
     mean_l <- split_data_by_month(fd, "Date", mean_var)
     p <- p %>% add_trace(
       data = mean_l, x = ~Date, y = mean_l[[mean_var]],
@@ -896,7 +1118,8 @@ server <- function(input, output, session) {
       marker = list(size = 4, color = "black"),
       name = "Nearby Mean"
     )
-
+    
+    # ----- Bar logic using selected STD type -----
     thr <- as.numeric(input[[thr_input]])
     std_type <- input$std_type
     
@@ -907,26 +1130,35 @@ server <- function(input, output, session) {
         sd_base    = .data[[sd_var]],
         sd_value   = 2 * sd_base
       )
-    
+
     
     std_label <- "2×St.Dev."
+    
 
+    
+    
     hover_tmpl <- paste0(
       "%{x|%d-%m-%Y}<br>",
       "Difference: %{y:.2f}‰<br>",
       std_label, ": %{customdata:.2f}‰<extra></extra>"
       
     )
+    
 
+    
+    # Threshold alatti és feletti pontok szétválasztása
     below_thr <- fd_bars %>%
       filter(!is.na(diff_value) & diff_value <= thr)
     above_thr <- fd_bars %>%
       filter(!is.na(diff_value) & diff_value > thr)
-
+    
+    ## ---- THRESHOLD ALATT ----
+    # Sötétszürke: diff > STD (de még threshold alatt)
     if (nrow(below_thr) > 0) {
       dark_df <- below_thr %>%
         filter(!is.na(sd_value) & diff_value > sd_value)
       
+      # Világosszürke: STD >= diff vagy STD hiányzik
       light_df <- below_thr %>%
         filter(is.na(sd_value) | sd_value >= diff_value)
       
@@ -935,7 +1167,7 @@ server <- function(input, output, session) {
           data  = light_df,
           x     = ~Date,
           y     = ~diff_value,
-          marker = list(color = "#C0C0C0"),
+          marker = list(color = "#C0C0C0"),   # világosszürke
           name  = paste(input$station, "diff."),
           opacity = 0.6,
           width   = 1000 * 60 * 60 * 24 * 20,
@@ -949,7 +1181,7 @@ server <- function(input, output, session) {
           data  = dark_df,
           x     = ~Date,
           y     = ~diff_value,
-          marker = list(color = "#606060"),
+          marker = list(color = "#606060"),   # sötétszürke
           name  = paste(input$station, "diff. > 2×St.Dev."),
           opacity = 0.7,
           width   = 1000 * 60 * 60 * 24 * 20,
@@ -959,14 +1191,18 @@ server <- function(input, output, session) {
       }
     }
     
+    ## ---- THRESHOLD FELETT ----
     if (nrow(above_thr) > 0) {
-
+      # Fekete körvonal CSAK akkor, ha:
+      # diff > threshold (ez már teljesül itt) ÉS diff > STD ÉS STD > 0
       ov_outline <- above_thr %>%
         filter(!is.na(sd_value) & sd_value > 0 & diff_value > sd_value)
-
+      
+      # Minden más threshold feletti pont: lila, körvonal nélkül
       ov_no_outline <- above_thr %>%
         filter(is.na(sd_value) | sd_value <= 0 | diff_value <= sd_value)
       
+      # Lila fekete körvonallal
       if (nrow(ov_outline) > 0) {
         p <- p %>% add_bars(
           data = ov_outline,
@@ -984,6 +1220,7 @@ server <- function(input, output, session) {
         )
       }
       
+      # Lila, KÖRVONAL NÉLKÜL (diff > threshold, de diff ≤ STD vagy STD ≤ 0 / NA)
       if (nrow(ov_no_outline) > 0) {
         p <- p %>% add_bars(
           data = ov_no_outline,
@@ -991,6 +1228,7 @@ server <- function(input, output, session) {
           y    = ~diff_value,
           marker = list(color = "purple"),
           name = wrap_name(paste(input$station, "diff. > threshold")),
+          #showlegend = nrow(ov_outline) == 0,  # ha már van lila+outline elem, ne duplázzuk
           showlegend  = TRUE,
           opacity = 0.7,
           width   = 1000 * 60 * 60 * 24 * 20,
@@ -1013,6 +1251,8 @@ server <- function(input, output, session) {
     )
   }
   
+  
+  
   output$plot_O18 <- renderPlotly({
     req(data_GNIP_raw(), input$station)
     
@@ -1023,6 +1263,8 @@ server <- function(input, output, session) {
     
     generate_plot("d18Oc", "d18Oc_Mean", "d18Oc_SD", "d18Oc_Diff", "#0A92FF", "d18O_threshold")
   })
+  
+  
   
   output$plot_H2 <- renderPlotly({
     req(data_GNIP_raw(), input$station)
@@ -1035,6 +1277,8 @@ server <- function(input, output, session) {
     generate_plot("d2Hc", "d2Hc_Mean", "d2Hc_SD", "d2Hc_Diff", "red", "d2H_threshold")
   })
   
+  
+  
   output$plot_D_excess <- renderPlotly({
     req(data_GNIP_raw(), input$station)
     
@@ -1046,11 +1290,15 @@ server <- function(input, output, session) {
     generate_plot("D_excess", "D_excess_Mean", "D_excess_SD", "D_excess_Diff", "green", "D_excess_threshold")
   })
   
+  
+  
+  
   output$plot_XY <- renderPlotly({
     req(data_GNIP_raw(), input$station)
     
     df <- filtered_data()
-
+    
+    # --- require at least one point with BOTH corrected values ---
     has_pair <- nrow(df) > 0 && any(!is.na(df$d18Oc) & !is.na(df$d2Hc))
     if (!has_pair) return(NULL)
     
@@ -1072,6 +1320,10 @@ server <- function(input, output, session) {
       )
   })
   
+  session$onSessionEnded(function() {
+    duration_sec <- round(as.numeric(difftime(Sys.time(), session_started_at, units = "secs")))
+    log_usage_event(session, "session_end", tab_name = isolate(input$main_tabs), duration_sec = duration_sec)
+  })
 }
 
 shinyApp(ui, server)
