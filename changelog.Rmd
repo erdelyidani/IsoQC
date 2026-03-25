@@ -2,22 +2,73 @@
 title: "Changelog"
 output: html_document
 ---
-## v2.1.1
-**2026-03-17**
 
-**Added:** Built-in usage logging.
-- Added server-side SQLite usage logging to support usage analytics.
-- The IsoQC app **does not store any user-uploaded datasets** (for more information, check paragraph 9 in the Instructions tab).
+## v2.3
+**2026-03-25**
 
-
-## v2.1.0
-**2025-12-03**
- 
 **Public version added**, minor code imrovements done.
 The source code of the IsoQC app is available on GitHub at the following link: 
 <a href="https://github.com/erdelyidani/IsoQC" target="_blank">
   IsoQC GitHub repository
 </a>
+
+
+## v2.2.3
+**2026-03-12**
+
+**Fixed:** Date-range updates now commit correctly from both the slider and manual *From* / *To* inputs.
+- Reworked the slider handling so the dashboard uses a dedicated commit event from the date slider instead of the live drag state.
+- Manual *From* / *To* edits now immediately update the committed dashboard interval and refresh the charts again.
+- Station-specific date bounds and the *Reset date range* action continue to stay synchronized with both input modes.
+
+**Fixed:** Basemap switching now preserves the current map state.
+- Switching between *Light* and *Terrain* no longer recreates the leaflet widget.
+- The selected station, nearby stations, distance lines and current map focus now remain visible after a basemap change.
+
+
+## v2.2.2
+**2026-03-12**
+
+**Fixed:** Date-range slider no longer commits heavy dashboard recalculations while it is still being dragged.
+- Preview updates coming from the live slider are now isolated from the committed dashboard date interval.
+- Nearby-station, distance-based and date-filtered calculations now wait for the final slider release event before the new period is applied.
+- The linked *From* / *To* controls continue to support direct manual date edits and reset behaviour.
+
+**Added:** Selectable map basemap on the Dashboard.
+- Added a *Basemap* selector directly on the map.
+- The map can now switch between the existing light basemap and a terrain/topographic basemap.
+
+
+## v2.2.1
+**2026-03-12**
+
+**Enhanced:** Date-range slider now commits only after release.
+- Dashboard recalculations that depend on the selected date range now use a committed date interval instead of the live slider position.
+- While the date-range slider is being dragged, only the visible *From* / *To* controls are updated; nearby-station and distance-based calculations wait until the mouse button or touch interaction is released.
+- Manual *From* / *To* date edits and the *Reset date range* button still apply immediately.
+
+
+## v2.2.0
+**2026-03-12**
+
+**Added:** Station-specific date range controller on the Dashboard.
+- Replaced the previous minimum/maximum date filtering workflow with a visible date-range slider.
+- Added manual *From* / *To* date pickers above the slider for direct start/end selection.
+- Enabled dragging the selected interval on the slider while preserving the chosen window length.
+- Added a *Reset date range* button that restores the full available period of the selected station.
+- The slider bounds now always follow the selected station and are defined from the earliest and latest dates with available δ¹⁸O and/or δ²H measurements, ensuring both isotope series are considered.
+
+**Enhanced:** Faster nearby-station distance handling.
+- Reworked distance calculations to use station-to-all distances only for the currently selected station instead of rebuilding a full station-by-station distance matrix.
+- Updated the nearby-station map highlighting and neighbour selection logic to reuse the faster distance results.
+
+
+## v2.1.0
+**2025-12-03**
+ 
+**Added:** Built-in usage logging.
+- Added server-side SQLite usage logging for session starts and ends, tab views, data import/test-dataset loading, exports and changelog opens.
+- Usage metrics are stored locally in the app log database to support lightweight adoption analytics and internal monitoring, see more in the Instructions tab.
 
 
 ## v2.0.9
