@@ -1,7 +1,7 @@
 # Live Application
 
 The deployed **IsoQC** application is available here:  
-<a href="https://sapps.geochem.hu/isoqc/" target="_blank" rel="noopener noreferrer">[Open IsoQC](https://sapps.geochem.hu/isoqc/)</a>
+<a href="https://sapps.geochem.hu/isoqc/" target="_blank" rel="noopener noreferrer">https://sapps.geochem.hu/isoqc/</a>
 
 ---
 
