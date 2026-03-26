@@ -1,3 +1,11 @@
+# Live Application
+
+**IsoQC** is publicly available online at:  
+**https://sapps.geochem.hu/isoqc/**
+
+You can access the deployed Shiny application directly through the link above.
+
+---
 
 # Introduction
 **IsoQC** is an interactive quality‑control dashboard designed for analysing stable isotope records (δ¹⁸O and δ²H) from precipitation samples.  
