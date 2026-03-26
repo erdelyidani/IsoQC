@@ -1,9 +1,7 @@
 # Live Application
 
-**IsoQC** is publicly available online at:  
-**https://sapps.geochem.hu/isoqc/**
-
-You can access the deployed Shiny application directly through the link above.
+The deployed **IsoQC** application is available here:  
+<a href="https://sapps.geochem.hu/isoqc/" target="_blank" rel="noopener noreferrer">Open IsoQC</a>
 
 ---
 
