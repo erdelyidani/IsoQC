@@ -119,9 +119,13 @@ Nearby stations appear on the map:
 
 # 5. Date Range Handling
 
-IsoQC includes a date‑range controller:
- 
-- Direct **From** / **To** date inputs   
+IsoQC includes an advanced date‑range controller:
+
+- A **slider** for fast interval selection  
+- Direct **From** / **To** date inputs  
+- A **Reset date range** button  
+- Station‑specific date limits  
+- Smooth interaction: recalculation happens only after final slider release
 
 If data are unavailable in the chosen interval, the app warns you (e.g., no δ¹⁸O or no δ²H).
 
@@ -171,35 +175,47 @@ The export includes UTF‑8 encoding with BOM for Excel compatibility.
 
 ---
 
-# 8. Filling Missing Months/Days (Optional)
+# 8. Filling Missing Months (Optional)
 
-If the dataset contains gaps for a specific month/day, you may:
+If the dataset contains gaps for a specific month, you may:
 
-1. Insert a **dummy numeric value** for that month/day in your original file.
+1. Insert a **dummy numeric value** for that month in your original file.
 2. Upload the updated file again.
 
-IsoQC will compute an average for that month/day, which can be used as an estimated replacement.
+IsoQC will compute an average for that month, which can be used as an estimated replacement.
 
 ---
 
 # 9. Data Privacy Notice
 
-The IsoQC app **does not store any user-uploaded datasets**.
+IsoQC **does not store user-uploaded datasets**. Uploaded files are processed only for the active session and are released when the session ends.
 
-Uploaded files are:
+To support operation, troubleshooting, security, and basic usage statistics, IsoQC stores a limited set of **technical usage logs** in an internal SQLite database. These may include:
 
-- processed in memory for the active session,
-- used only for temporary on-screen analysis,
-- released when the session ends.
-
-To support maintenance and basic usage statistics, the app stores a limited set of **server-side usage metrics**. These metrics may include:
-
-- session start time,
-- session end time,
+- session start and end time,
 - session duration,
-- the active tab viewed in the app,
+- active tab,
+- app version,
+- session token,
+- limited technical event details,
+- the **country** associated with the session.
 
-These usage metrics are used only for app maintenance, stability monitoring, and aggregated usage analysis.
+IsoQC **does not store the exact IP address** in its SQLite usage log.
+
+The country value is determined at session start from network information. In the current implementation, the browser contacts a geolocation service (`ipapi.co`) to obtain the country value. The returned **country** may be stored in the app log, while the exact IP address is used only transiently for the lookup and is **not stored by IsoQC** in the SQLite database.
+
+These limited logs are used only for:
+
+- secure and reliable operation of the app,
+- troubleshooting and maintenance,
+- basic aggregated usage statistics.
+
+For general information about HUN-REN CSFK website data processing, please see the institutional Privacy Notice: 
+<a href="https://csfk.hun-ren.hu/letoltesek/HUN-REN_CSFK_WEB_Adatkezelesi_Tajekoztato_20241001.pdf" target="_blank">
+  [HUN-REN CSFK Website Privacy Notice]
+</a> 
+
+---
 
 ---
 
