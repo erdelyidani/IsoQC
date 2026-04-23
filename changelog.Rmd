@@ -3,6 +3,14 @@ title: "Changelog"
 output: html_document
 ---
 
+## v2.4
+**2026-04-17**
+
+**Added:** Citation banner on the Dashboard.
+**Enhanced:** Exported mean time-series CSV now includes citation metadata.
+**Enhanced:** Basemap selector styling on the Dashboard map.
+
+
 ## v2.3
 **2026-03-25**
 

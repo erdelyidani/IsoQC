@@ -1,5 +1,7 @@
-#IsoQC v2.2.3
-app_version <- "v2.3"
+#IsoQC v2.4
+app_version <- "v2.4"
+citation_text <- "Hatvani, I.G., Erdélyi, D., Vreča, P., Lojen, S., Žagar, K., Gačnik, J., Kern, Z., 2026. Online screening tool for precipitation stable isotopes records: hybrid distance / density based outlier filtering approach via interactive web application. Journal of Hydrology 672: 135401. DOI:https://doi.org/10.1016/j.jhydrol.2026.135401."
+citation_url <- "https://doi.org/10.1016/j.jhydrol.2026.135401"
 read_wordmark_part <- function(path) {
   if (file.exists(path)) {
     base64enc::dataURI(file = path, mime = "image/png")
@@ -306,7 +308,7 @@ ui <- fluidPage(
 
 .isoqc-header {
   display: grid;
-  grid-template-columns: minmax(150px, auto) minmax(0, 1fr) minmax(150px, auto);
+  grid-template-columns: minmax(150px, auto) minmax(0, 1fr) minmax(260px, 420px);
   align-items: center;
   gap: 16px;
   padding: 12px 10px 14px 10px;
@@ -331,11 +333,98 @@ ui <- fluidPage(
   margin-top: -8px;
 }
 
-.isoqc-header-right-spacer {
+.isoqc-header-right {
   justify-self: end;
-  width: 170px;
-  height: 1px;
-  visibility: hidden;
+  align-self: start;
+  width: 100%;
+  max-width: 420px;
+}
+
+.isoqc-cite-box {
+  display: block;
+  width: 100%;
+  background: rgba(255,255,255,0.94);
+  border: 1px solid rgba(10,146,255,0.18);
+  border-radius: 14px;
+  padding: 10px 12px;
+  box-shadow: 0 8px 22px rgba(0,0,0,0.08);
+  line-height: 1.35;
+  text-align: left;
+}
+
+.isoqc-cite-label {
+  display: inline-block;
+  margin-right: 6px;
+  color: #0A92FF;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.isoqc-cite-link,
+.isoqc-cite-link:visited,
+.isoqc-cite-link:hover,
+.isoqc-cite-link:focus,
+.isoqc-cite-link:active {
+  color: #334155 !important;
+  font-size: 11.5px;
+  font-weight: 500;
+  text-decoration: none !important;
+}
+
+.isoqc-cite-link:hover,
+.isoqc-cite-link:focus {
+  color: #0A92FF !important;
+}
+
+.isoqc-basemap-panel {
+  z-index: 1000;
+  background: rgba(255,255,255,0.94);
+  border: 1px solid rgba(10,146,255,0.16);
+  border-radius: 14px;
+  padding: 8px 10px;
+  box-shadow: 0 8px 22px rgba(0,0,0,0.14);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.isoqc-basemap-control .form-group {
+  margin-bottom: 0;
+}
+
+.isoqc-basemap-control .control-label {
+  display: none;
+}
+
+.isoqc-basemap-control select.form-control {
+  min-width: 124px;
+  height: 38px;
+  padding: 0 38px 0 12px;
+  border: 1px solid rgba(126,144,166,0.45);
+  border-radius: 10px;
+  background-color: #ffffff;
+  background-image: url('data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='none' stroke='%2355697A' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.8' d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E');
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px 8px;
+  color: #334155;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  box-shadow: none;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}
+
+.isoqc-basemap-control select.form-control:hover {
+  border-color: rgba(10,146,255,0.35);
+}
+
+.isoqc-basemap-control select.form-control:focus {
+  border-color: #0A92FF;
+  box-shadow: 0 0 0 0.18rem rgba(10,146,255,0.14);
 }
 
 .app-header-wordmark-row {
@@ -436,8 +525,18 @@ ui <- fluidPage(
     margin-top: 5px;
   }
 
-  .isoqc-header-right-spacer {
-    display: none;
+  .isoqc-header-right {
+    justify-self: center;
+    max-width: 760px;
+  }
+
+  .isoqc-cite-box {
+    text-align: center;
+  }
+
+  .isoqc-cite-label {
+    display: block;
+    margin: 0 0 4px 0;
   }
 
   .app-header-wordmark-part {
@@ -487,6 +586,18 @@ ui <- fluidPage(
 
   .iso-pie-tooltip {
     top: calc(100% + 6px);
+  }
+
+  .isoqc-cite-box {
+    padding: 9px 10px;
+  }
+
+  .isoqc-cite-link,
+  .isoqc-cite-link:visited,
+  .isoqc-cite-link:hover,
+  .isoqc-cite-link:focus,
+  .isoqc-cite-link:active {
+    font-size: 10.5px;
   }
 }
 
@@ -830,7 +941,20 @@ div(
     )
   ),
 
-  div(class = "isoqc-header-right-spacer")
+  div(
+    class = "isoqc-header-right",
+    div(
+      class = "isoqc-cite-box",
+      tags$span("Cite:", class = "isoqc-cite-label"),
+      tags$a(
+        href = citation_url,
+        target = "_blank",
+        rel = "noopener noreferrer",
+        class = "isoqc-cite-link",
+        citation_text
+      )
+    )
+  )
 ),
   theme = bs_theme(bootswatch = "cerulean"),
 
@@ -919,16 +1043,16 @@ div(
                     leafletOutput("map"),
                     absolutePanel(
                       top = 10, right = 10, fixed = FALSE, draggable = FALSE,
-                      style = paste(
-                        "z-index: 1000; background: rgba(255,255,255,0.92);",
-                        "padding: 4px 6px 0 6px; border-radius: 8px;",
-                        "box-shadow: 0 1px 6px rgba(0,0,0,0.25); min-width: 108px;"
-                      ),
-                      selectInput(
-                        "basemap", NULL,
-                        choices = c("Light", "Terrain"),
-                        selected = "Light",
-                        width = "90px"
+                      class = "isoqc-basemap-panel",
+                      div(
+                        class = "isoqc-basemap-control",
+                        selectInput(
+                          "basemap", NULL,
+                          choices = c("Light", "Terrain"),
+                          selected = "Light",
+                          width = "124px",
+                          selectize = FALSE
+                        )
                       )
                     )
                   ),
@@ -1934,7 +2058,8 @@ server <- function(input, output, session) {
         ElevCorr_d18O      = input$g_isoO,
         ElevCorr_d2H       = input$g_isoH,
         From               = active_date_range()[1],
-        To                 = active_date_range()[2]
+        To                 = active_date_range()[2],
+        Citation           = citation_text
       )
   })
   
