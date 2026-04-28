@@ -1,5 +1,5 @@
-#IsoQC v2.4
-app_version <- "v2.4"
+#IsoQC v2.4.1
+app_version <- "v2.4.1"
 citation_text <- "Hatvani, I.G., Erdélyi, D., Vreča, P., Lojen, S., Žagar, K., Gačnik, J., Kern, Z., 2026. Online screening tool for precipitation stable isotopes records: hybrid distance / density based outlier filtering approach via interactive web application. Journal of Hydrology 672: 135401. DOI:https://doi.org/10.1016/j.jhydrol.2026.135401."
 citation_url <- "https://doi.org/10.1016/j.jhydrol.2026.135401"
 read_wordmark_part <- function(path) {
@@ -27,6 +27,7 @@ library(DBI)
 library(RSQLite)
 library(jsonlite)
 #FILEUPLOAD
+#setwd("G:/.shortcut-targets-by-id/1nGS-HGeaX1tlVpCzh-L9D4HzZAFszMzL/GNIP data filtering/fileupload_version")
 #setwd("C:/Users/Daniel/My Drive/Erdélyi Dániel/Doktori/Alapadathalmaz/Europe/2025_05_08/")
 # --- Helper: wrap long legend names every 16 chars with newline ---
 wrap_name <- function(x) {
@@ -35,16 +36,40 @@ wrap_name <- function(x) {
 
 # --- Helper: split data by month, inserting gaps ---
 split_data_by_month <- function(df, x_var, y_var) {
-  df <- as.data.frame(df)[order(df[[x_var]]), ]
+  df <- as.data.frame(df)
+
+  if (is.null(df) || nrow(df) == 0 || !(x_var %in% names(df)) || !(y_var %in% names(df))) {
+    return(df)
+  }
+
+  df[[x_var]] <- as.Date(df[[x_var]])
+  df <- df[!is.na(df[[x_var]]), , drop = FALSE]
+
+  if (nrow(df) == 0) {
+    return(df)
+  }
+
+  df <- df[order(df[[x_var]]), , drop = FALSE]
+
+  if (nrow(df) == 1) {
+    rownames(df) <- NULL
+    return(df)
+  }
+
   df$ym <- zoo::as.yearmon(df[[x_var]])
   out <- df[1, , drop = FALSE]
-  for (i in 2:nrow(df)) {
-    if (is.na(df$ym[i]) || is.na(df$ym[i-1])) {
+
+  for (i in seq.int(2, nrow(df))) {
+    current_ym <- df$ym[i]
+    previous_ym <- df$ym[i - 1]
+
+    if (is.na(current_ym) || is.na(previous_ym)) {
       out <- rbind(out, df[i, , drop = FALSE])
     } else {
-      d <- df$ym[i] - df$ym[i-1]
-      if (!is.na(d) && d > (1/12 + 1e-6)) {
-        gap <- df[i-1, , drop = FALSE]
+      d <- as.numeric(current_ym - previous_ym)
+
+      if (is.finite(d) && d > (1/12 + 1e-6)) {
+        gap <- df[i - 1, , drop = FALSE]
         gap[[y_var]] <- NA
         out <- rbind(out, gap, df[i, , drop = FALSE])
       } else {
@@ -52,7 +77,9 @@ split_data_by_month <- function(df, x_var, y_var) {
       }
     }
   }
+
   out$ym <- NULL
+  rownames(out) <- NULL
   out
 }
 
@@ -2109,42 +2136,64 @@ server <- function(input, output, session) {
     nd <- nearby_station_data() %>%
       filter(Date >= active_date_range()[1] & Date <= active_date_range()[2])
     p <- plot_ly()
-    
+
+    fd <- as.data.frame(fd)
+    nd <- as.data.frame(nd)
+
     # Nearby stations time-series (grey)
-    for (stn in sort(unique(nd$Station))) {
-      sub <- nd %>% filter(Station == stn)
-      sl  <- split_data_by_month(sub, "Date", y_var)
-      if (!all(is.na(sl[[y_var]]))) {
+    if (!is.null(nd) && nrow(nd) > 0 && y_var %in% names(nd)) {
+      for (stn in sort(unique(nd$Station))) {
+        sub <- nd %>%
+          filter(Station == stn, !is.na(Date))
+
+        if (nrow(sub) == 0 || all(is.na(sub[[y_var]]))) {
+          next
+        }
+
+        sl <- split_data_by_month(sub, "Date", y_var)
+
+        if (nrow(sl) > 0 && any(!is.na(sl[[y_var]]))) {
+          p <- p %>% add_trace(
+            data = sl, x = ~Date, y = as.formula(paste0("~", y_var)),
+            type = "scatter", mode = "lines+markers",
+            line = list(color = "grey", width = 0.5),
+            marker = list(size = 2, opacity = 0.7),
+            name = stn
+          )
+        }
+      }
+    }
+
+    # Selected station (colored line)
+    if (!is.null(fd) && nrow(fd) > 0 && y_var %in% names(fd) && any(!is.na(fd[[y_var]]))) {
+      sel_l <- split_data_by_month(fd, "Date", y_var)
+
+      if (nrow(sel_l) > 0 && any(!is.na(sel_l[[y_var]]))) {
         p <- p %>% add_trace(
-          data = sl, x = ~Date, y = as.formula(paste0("~", y_var)),
+          data = sel_l, x = ~Date, y = sel_l[[y_var]],
           type = "scatter", mode = "lines+markers",
-          line = list(color = "grey", width = 0.5),
-          marker = list(size = 2, opacity = 0.7),
-          name = stn
+          line = list(color = color, width = 2),
+          marker = list(size = 5, color = color),
+          name = input$station
         )
       }
     }
-    
-    # Selected station (colored line)
-    sel_l <- split_data_by_month(fd, "Date", y_var)
-    p <- p %>% add_trace(
-      data = sel_l, x = ~Date, y = sel_l[[y_var]],
-      type = "scatter", mode = "lines+markers",
-      line = list(color = color, width = 2),
-      marker = list(size = 5, color = color),
-      name = input$station
-    )
-    
+
     # Nearby mean (black dashed)
-    mean_l <- split_data_by_month(fd, "Date", mean_var)
-    p <- p %>% add_trace(
-      data = mean_l, x = ~Date, y = mean_l[[mean_var]],
-      type = "scatter", mode = "lines+markers",
-      line = list(color = "black", width = 2, dash = "dot"),
-      marker = list(size = 4, color = "black"),
-      name = "Nearby Mean"
-    )
-    
+    if (!is.null(fd) && nrow(fd) > 0 && mean_var %in% names(fd) && any(!is.na(fd[[mean_var]]))) {
+      mean_l <- split_data_by_month(fd, "Date", mean_var)
+
+      if (nrow(mean_l) > 0 && any(!is.na(mean_l[[mean_var]]))) {
+        p <- p %>% add_trace(
+          data = mean_l, x = ~Date, y = mean_l[[mean_var]],
+          type = "scatter", mode = "lines+markers",
+          line = list(color = "black", width = 2, dash = "dot"),
+          marker = list(size = 4, color = "black"),
+          name = "Nearby Mean"
+        )
+      }
+    }
+
     # ----- Bar logic using selected STD type -----
     thr <- as.numeric(input[[thr_input]])
 
@@ -2154,38 +2203,31 @@ server <- function(input, output, session) {
         sd_base    = .data[[sd_var]],
         sd_value   = 2 * sd_base
       )
-    
-    
+
     std_label <- "2×St.Dev."
-    
-    
-    
-    
+
     hover_tmpl <- paste0(
       "%{x|%d-%m-%Y}<br>",
       "Difference: %{y:.2f}‰<br>",
       std_label, ": %{customdata:.2f}‰<extra></extra>"
-      
     )
-    
-    
-    
+
     # Threshold alatti és feletti pontok szétválasztása
     below_thr <- fd_bars %>%
       filter(!is.na(diff_value) & diff_value <= thr)
     above_thr <- fd_bars %>%
       filter(!is.na(diff_value) & diff_value > thr)
-    
+
     ## ---- THRESHOLD ALATT ----
     # Sötétszürke: diff > STD (de még threshold alatt)
     if (nrow(below_thr) > 0) {
       dark_df <- below_thr %>%
         filter(!is.na(sd_value) & diff_value > sd_value)
-      
+
       # Világosszürke: STD >= diff vagy STD hiányzik
       light_df <- below_thr %>%
         filter(is.na(sd_value) | sd_value >= diff_value)
-      
+
       if (nrow(light_df) > 0) {
         p <- p %>% add_bars(
           data  = light_df,
@@ -2199,7 +2241,7 @@ server <- function(input, output, session) {
           hovertemplate = hover_tmpl
         )
       }
-      
+
       if (nrow(dark_df) > 0) {
         p <- p %>% add_bars(
           data  = dark_df,
@@ -2214,18 +2256,18 @@ server <- function(input, output, session) {
         )
       }
     }
-    
+
     ## ---- THRESHOLD FELETT ----
     if (nrow(above_thr) > 0) {
       # Fekete körvonal CSAK akkor, ha:
       # diff > threshold (ez már teljesül itt) ÉS diff > STD ÉS STD > 0
       ov_outline <- above_thr %>%
         filter(!is.na(sd_value) & sd_value > 0 & diff_value > sd_value)
-      
+
       # Minden más threshold feletti pont: lila, körvonal nélkül
       ov_no_outline <- above_thr %>%
         filter(is.na(sd_value) | sd_value <= 0 | diff_value <= sd_value)
-      
+
       # Lila fekete körvonallal
       if (nrow(ov_outline) > 0) {
         p <- p %>% add_bars(
@@ -2243,7 +2285,7 @@ server <- function(input, output, session) {
           hovertemplate = hover_tmpl
         )
       }
-      
+
       # Lila, KÖRVONAL NÉLKÜL (diff > threshold, de diff ≤ STD vagy STD ≤ 0 / NA)
       if (nrow(ov_no_outline) > 0) {
         p <- p %>% add_bars(
@@ -2261,7 +2303,7 @@ server <- function(input, output, session) {
         )
       }
     }
-    
+
     p %>% layout(
       barmode = "overlay",
       legend  = list(font = list(size = 9), x = 1.02, y = 1),
@@ -2274,6 +2316,7 @@ server <- function(input, output, session) {
       ))
     )
   }
+
   
   
   
